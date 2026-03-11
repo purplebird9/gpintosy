@@ -1,11 +1,11 @@
 #include "threads/init.h"
-#include <console.h>
+#include <console.h> //
 #include <debug.h>
 #include <inttypes.h>
 #include <limits.h>
 #include <random.h>
 #include <stddef.h>
-#include <stdio.h>
+#include <stdio.h> //
 #include <stdlib.h>
 #include <string.h>
 #include "devices/kbd.h"
@@ -32,7 +32,7 @@
 #include "tests/threads/tests.h"
 #endif
 #ifdef FILESYS
-#include "devices/block.h"
+#include "devices/block.h" //devices/input.c
 #include "devices/ide.h"
 #include "filesys/filesys.h"
 #include "filesys/fsutil.h"
@@ -65,6 +65,8 @@ static char **parse_options (char **argv);
 static void run_actions (char **argv);
 static void usage (void);
 
+//add
+static void tiny_shell(void);
 #ifdef FILESYS
 static void locate_block_devices (void);
 static void locate_block_device (enum block_type, const char *name);
@@ -134,13 +136,71 @@ pintos_init (void)
     run_actions (argv);
   } else {
     // TODO: no command line passed to kernel. Run interactively 
+    tiny_shell();
   }
 
   /* Finish up. */
   shutdown ();
   thread_exit ();
 }
-
+
+/*
+It starts with a prompt PKUOS> and waits for user input.
+
+As the user types in a printable character, display the character.
+
+When a newline is entered, it parses the input and checks if it is whoami. 
+If it is whoami, print your student id. 
+Afterward, the monitor will print the command prompt PKUOS> again in the next line and repeat.
+
+If the user input is exit, the monitor will quit to allow the kernel to finish. 
+For the other input, print invalid command. 
+*/
+static void
+tiny_shell(void) {
+  char buf[128];
+  int idx=0;
+  while(true){
+    printf("PKUOS>");
+    idx=0;
+    // input starts
+    while(true){
+      char c = input_getc();//input_getc()只从键盘缓冲区取一个字符,不会回显在屏幕上!
+      if(c=='\r' || c=='\n'){
+        //printf("DEBUG: enter detected\n");
+        buf[idx]='\0';
+        //printf("DEBUG: Current buf: %s\n", buf);
+        printf("\n");
+        break;
+      }
+      if(idx<127){
+        //printf("(DEBUG: received char: %c \n", c, c);
+        buf[idx++]=c;
+        printf("%c", c); 
+      }
+    }
+    //printf("Debug: input finished\n");
+
+    if(idx==0) continue; //input is empty
+    if(strlen(buf)==1){
+      //printf("<1>\n");
+      printf("%s\n", buf);
+    }
+    else if(!strcmp("whoami",buf)){
+      printf("2400013053\n");
+    }
+    else if(!strcmp("exit",buf)){
+      shutdown_power_off();
+    }else{
+      printf("invalid command\n");
+    }
+  }    
+}
+// add delete?
+
+
+
+
 /** Clear the "BSS", a segment that should be initialized to
    zeros.  It isn't actually stored on disk or zeroed by the
    kernel loader, so we have to zero it ourselves.
@@ -156,7 +216,7 @@ bss_init (void)
 
 /** Populates the base page directory and page table with the
    kernel virtual mapping, and then sets up the CPU to use the
-   new page directory.  Points init_page_dir to the page
+   new page directory.  Pos init_page_dir to the page
    directory it creates. */
 static void
 paging_init (void)
