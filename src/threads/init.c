@@ -165,7 +165,7 @@ tiny_shell(void) {
     idx=0;
     // input starts
     while(true){
-      char c = input_getc();//input_getc()只从键盘缓冲区取一个字符,不会回显在屏幕上!
+      char c = input_getc();//input_getc()只从键盘缓冲区取一个字符,不会回显在屏幕上
       if(c=='\r' || c=='\n'){
         //printf("DEBUG: enter detected\n");
         buf[idx]='\0';
@@ -182,11 +182,7 @@ tiny_shell(void) {
     //printf("Debug: input finished\n");
 
     if(idx==0) continue; //input is empty
-    if(strlen(buf)==1){
-      //printf("<1>\n");
-      printf("%s\n", buf);
-    }
-    else if(!strcmp("whoami",buf)){
+    if(!strcmp("whoami",buf)){
       printf("2400013053\n");
     }
     else if(!strcmp("exit",buf)){
