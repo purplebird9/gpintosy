@@ -6,3 +6,7 @@ docker exec -it pintos bash
 cd pintos/src/threads/build
 pintos-gdb kernel.o
 debugpintos
+
+
+杀死所有容器
+docker stop $(docker ps -q)
