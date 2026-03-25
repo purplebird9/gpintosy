@@ -103,7 +103,9 @@ timer_sleep (int64_t ticks)
     thread_yield ();
 */
   /*1.1: new timer_sleep*/
-  ASSERT (intr_get_level () == INTR_OFF); //turn off interrupt for protection
+  //DEBUG: ASSERT (intr_get_level () == INTR_OFF); This may fail!!!
+  enum intr_level old_level = intr_disable (); 
+
 
   struct thread *cur = thread_current();
   /*put thread into sleep_list*/
@@ -112,7 +114,7 @@ timer_sleep (int64_t ticks)
   /*block thread*/
   thread_block();
   /*restart interrupt*/
-  intr_set_level (INTR_ON);
+  intr_set_level (old_level);
 }
 
 /** Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -186,6 +188,7 @@ timer_print_stats (void)
 }
 
 /** Timer interrupt handler. */
+/* TODO: optimize */
 static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
@@ -194,14 +197,16 @@ timer_interrupt (struct intr_frame *args UNUSED)
   
   /*1.1: new timer_interrupt*/
   struct list_elem *e = list_begin (&sleep_list);
-  for(e = list_begin(&sleep_list); e != list_end (&sleep_list); e = list_next (e))
+  while (e != list_end (&sleep_list)) 
   {
     struct thread *t = list_entry (e, struct thread, elem);
     /*time up*/
     if(t->wakeup_ticks <= ticks){
-      list_remove (e);
+      e = list_remove (e);//DEBUG: 迭代指针问题
       thread_unblock (t);
     }
+    else
+      e = list_next (e);
   }
 }
 
