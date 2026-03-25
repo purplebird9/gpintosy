@@ -17,6 +17,9 @@
 #error TIMER_FREQ <= 1000 recommended
 #endif
 
+/** 1.1: add struct list sleep_list */
+static struct list sleep_list;
+
 /** Number of timer ticks since OS booted. */
 static int64_t ticks;
 
@@ -37,11 +40,14 @@ timer_init (void)
 {
   pit_configure_channel (0, 2, TIMER_FREQ);
   intr_register_ext (0x20, timer_interrupt, "8254 Timer");
+  /** 1.1: init struct list sleep_list */
+  list_init(&sleep_list);
+
 }
 
 /** Calibrates loops_per_tick, used to implement brief delays. */
 void
-timer_calibrate (void) 
+timer_calibrate (void)  // 校准
 {
   unsigned high_bit, test_bit;
 
@@ -91,9 +97,22 @@ timer_sleep (int64_t ticks)
 {
   int64_t start = timer_ticks ();
 
-  ASSERT (intr_get_level () == INTR_ON);
+/*  
+  ASSERT (intr_get_level () == INTR_ON); //turn on interrupt
   while (timer_elapsed (start) < ticks) 
     thread_yield ();
+*/
+  /*1.1: new timer_sleep*/
+  ASSERT (intr_get_level () == INTR_OFF); //turn off interrupt for protection
+
+  struct thread *cur = thread_current();
+  /*put thread into sleep_list*/
+  cur->wakeup_ticks = start + ticks;
+  list_push_back (&sleep_list, &cur->elem);
+  /*block thread*/
+  thread_block();
+  /*restart interrupt*/
+  intr_set_level (INTR_ON);
 }
 
 /** Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -165,13 +184,25 @@ timer_print_stats (void)
 {
   printf ("Timer: %"PRId64" ticks\n", timer_ticks ());
 }
-
+
 /** Timer interrupt handler. */
 static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
   thread_tick ();
+  
+  /*1.1: new timer_interrupt*/
+  struct list_elem *e = list_begin (&sleep_list);
+  for(e = list_begin(&sleep_list); e != list_end (&sleep_list); e = list_next (e))
+  {
+    struct thread *t = list_entry (e, struct thread, elem);
+    /*time up*/
+    if(t->wakeup_ticks <= ticks){
+      list_remove (e);
+      thread_unblock (t);
+    }
+  }
 }
 
 /** Returns true if LOOPS iterations waits for more than one timer

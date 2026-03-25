@@ -156,7 +156,7 @@ struct list_elem *list_back (struct list *);
 size_t list_size (struct list *);
 bool list_empty (struct list *);
 
-/** Miscellaneous. */
+/** Miscellaneous.(杂项) */
 void list_reverse (struct list *);
 
 /** Compares the value of two list elements A and B, given
