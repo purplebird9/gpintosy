@@ -15,6 +15,10 @@
 #include "userprog/process.h"
 #endif
 
+/* 1.3 */
+#include "threads/arithmetic.h"
+
+
 /** Random value for struct thread's `magic' member.
    Used to detect stack overflow.  See the big comment at the top
    of thread.h for details. */
@@ -197,10 +201,15 @@ thread_create (const char *name, int priority,
   sf = alloc_frame (t, sizeof *sf);
   sf->eip = switch_entry;
   sf->ebp = 0;
-
+  
   /* Add to run queue. */
   thread_unblock (t);
 
+  /* 1.2.1 */
+  /* If this thread has higher priority than current, current yield()*/
+  if (priority > thread_get_priority())
+    thread_yield();
+  
   return tid;
 }
 
@@ -250,6 +259,9 @@ thread_unblock (struct thread *t)
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
   //在 C 语言中，函数名在作为参数传递时会自动转换为指向该函数的指针。
+  // 1.2.1: list_insert_ordered 
+  // 不能自己改成RUNNING来切换到运行态!
+  // 把检查,让位的逻辑放在调用thread_unblock的地方,比如thread_create和thread_set_priority
   list_insert_ordered (&ready_list, &t->elem, priority_compare, NULL); //降序
   t->status = THREAD_READY;
   intr_set_level (old_level);
@@ -349,7 +361,11 @@ thread_foreach (thread_action_func *func, void *aux)
 void
 thread_set_priority (int new_priority) 
 {
+  int old_priority = thread_get_priority();
   thread_current ()->priority = new_priority;
+  /* 1.2.1: If the thread lowers its priority, yield() immediately */
+  if (new_priority < old_priority)
+    thread_yield();
 }
 
 /** Returns the current thread's priority. */
