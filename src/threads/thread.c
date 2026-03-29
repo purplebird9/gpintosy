@@ -228,6 +228,18 @@ thread_block (void)
    be important: if the caller had disabled interrupts itself,
    it may expect that it can atomically unblock a thread and
    update other data. */
+
+
+/** 1.2.1: list_insert_ordered */
+/* 辅助函数:比较优先级 */
+bool priority_compare(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
+{
+  struct thread *ta = list_entry(a, struct thread, elem);
+  struct thread *tb = list_entry(b, struct thread, elem);
+  return ta->priority > tb->priority; //降序
+}
+
+
 void
 thread_unblock (struct thread *t) 
 {
@@ -237,7 +249,8 @@ thread_unblock (struct thread *t)
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
-  list_push_back (&ready_list, &t->elem);
+  //在 C 语言中，函数名在作为参数传递时会自动转换为指向该函数的指针。
+  list_insert_ordered (&ready_list, &t->elem, priority_compare, NULL); //降序
   t->status = THREAD_READY;
   intr_set_level (old_level);
 }
@@ -302,16 +315,17 @@ void
 thread_yield (void) 
 {
   struct thread *cur = thread_current ();
-  enum intr_level old_level;
+  enum intr_level old_level; 
   
-  ASSERT (!intr_context ());
+  ASSERT (!intr_context ()); //not during an external interruption
 
-  old_level = intr_disable ();
+  old_level = intr_disable (); //disable intr, 返回值是old_level
   if (cur != idle_thread) 
-    list_push_back (&ready_list, &cur->elem);
+    // 1.2.1: list_insert_ordered
+    list_insert_ordered (&ready_list, &cur->elem, priority_compare, NULL); 
   cur->status = THREAD_READY;
   schedule ();
-  intr_set_level (old_level);
+  intr_set_level (old_level); 
 }
 
 /** Invoke function 'func' on all threads, passing along 'aux'.
