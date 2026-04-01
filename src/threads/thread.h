@@ -95,6 +95,13 @@ struct thread
 
     /* 1.1: add wakeup time*/
     int64_t wakeup_ticks;
+
+    /* LAB1.2.2: priority donation*/
+    struct list_elem donors_elem;              /**< List element for donors list. */
+    struct list donors;                       /**< List of threads that donated priority to this thread. */
+    int base_priority;                    /**< the thread's Original priority before donation. */
+    struct lock *waiting_on_lock;              /**< the lock that the thread is waiting on (if any) */
+
   
 
 #ifdef USERPROG
