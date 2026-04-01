@@ -17,6 +17,8 @@
 
 /* 1.3 */
 #include "threads/arithmetic.h"
+int load_avg; //系统平均负载, 17.14.1: fixed-point, Q=14
+
 
 
 /** Random value for struct thread's `magic' member.
@@ -211,6 +213,8 @@ thread_start (void)
   /* Start preemptive thread scheduling. */
   intr_enable ();
 
+  /* 1.3 */
+  load_avg = 0;
   /* Wait for the idle thread to initialize idle_thread. */
   sema_down (&idle_started);
 }
@@ -602,10 +606,15 @@ init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
+
   /* 1.2.2: init new properties*/
   t->base_priority = priority;
   list_init(&t->donors_list);
   t->waiting_on_lock = NULL;
+
+  /* 1.3: init new properties*/
+  t->nice = 0;
+  t->recent_cpu = 0;
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);

@@ -112,6 +112,7 @@ FAIL tests/threads/mlfqs-block
 - 结果没变
 - synch.c: blocked的线程priority也会变化, 所以唤醒前必须重新排序!
 - 加了一堆list_sort
+- 以及lock_acquire中,哪怕你现在优先级低，你也等在这个锁上，以后你的优先级一旦被别人提升，锁的持有者就该跟着提升。所以只要等在锁上，就必须无条件加入 donors_list。
 
 ```
 pass tests/threads/alarm-single
@@ -133,6 +134,13 @@ pass tests/threads/priority-sema
 pass tests/threads/priority-condvar
 pass tests/threads/priority-donate-chain
 ```
+- 1.2.2问题: fifo timeout(page_fault), "doubled test names"
+
+
+**20:00-20:30**
+- start 1.3
+- struct thread增加nice,recent_cpu,load_avg并初始化
+- TODO: list_sort不稳定排序,会破坏fifo! 要全替换成手写的稳定排序
 
 
 

@@ -102,6 +102,10 @@ struct thread
     int base_priority;                    /**< the thread's Original priority before donation. */
     struct lock *waiting_on_lock;              /**< the lock that the thread is waiting on (if any) */
 
+    /* LAB1.3: advanced scheduler*/
+    int nice;                           /**< Niceness. */
+    int recent_cpu;                     /**< Recent CPU usage. */
+
   
 
 #ifdef USERPROG
