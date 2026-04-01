@@ -165,7 +165,72 @@ void thread_recall_donation(struct lock *lock){
   }
 }
 
+/* 1.3 计算优先级, recent_cpu, load_avg的函数*/
+void
+mlfqs_calculate_priority (struct thread *t)
+{
+  if (t == idle_thread) 
+    return ;
+  t->priority = fp_to_int (add_mixed (div_mixed (t->recent_cpu, -4), PRI_MAX - t->nice * 2));
+}
 
+void
+mlfqs_calculate_recent_cpu (struct thread *t)
+{
+  if (t == idle_thread)
+    return ;
+  t->recent_cpu = add_mixed (mult_fp (div_fp (mult_mixed (load_avg, 2), add_mixed (mult_mixed (load_avg, 2), 1)), t->recent_cpu), t->nice);
+}
+
+void 
+mlfqs_calculate_load_avg (void) 
+{
+  int ready_threads;
+  
+  if (thread_current () == idle_thread)
+    ready_threads = list_size (&ready_list);
+  else
+    ready_threads = list_size (&ready_list) + 1;
+
+  load_avg = add_fp (mult_fp (div_fp (int_to_fp (59), int_to_fp (60)), load_avg), 
+                     mult_mixed (div_fp (int_to_fp (1), int_to_fp (60)), ready_threads));
+}
+
+/*
+现在，我们来创建当每个值发生变化时要执行的函数。这些值共有 3 种变化情况。
+
+每隔 1 个时钟周期，将运行线程的 recent_cpu 值加 1。
+每隔 4 个游戏刻重新计算所有线程的优先级
+每秒重新计算所有线程的 recent_cpu 和 load_avg 值
+*/
+void
+mlfqs_increment_recent_cpu (void)
+{
+  if (thread_current () != idle_thread)
+    thread_current ()->recent_cpu = add_mixed (thread_current ()->recent_cpu, 1);
+}
+
+void
+mlfqs_recalculate_recent_cpu (void)
+{
+  struct list_elem *e;
+
+  for (e = list_begin (&all_list); e != list_end (&all_list); e = list_next (e)) {
+    struct thread *t = list_entry (e, struct thread, allelem);
+    mlfqs_calculate_recent_cpu (t);
+  }
+}
+
+void
+mlfqs_recalculate_priority (void)
+{
+  struct list_elem *e;
+
+  for (e = list_begin (&all_list); e != list_end (&all_list); e = list_next (e)) {
+    struct thread *t = list_entry (e, struct thread, allelem);
+    mlfqs_calculate_priority (t);
+  }
+}
 
 
 

@@ -140,7 +140,7 @@ pass tests/threads/priority-donate-chain
 **20:00-20:30**
 - start 1.3
 - struct thread增加nice,recent_cpu,load_avg并初始化
-- TODO: list_sort不稳定排序,会破坏fifo! 要全替换成手写的稳定排序
+- TODO: list_sort不稳定排序,会破坏fifo! 要全替换成手写的稳定排序?
 
 
 
