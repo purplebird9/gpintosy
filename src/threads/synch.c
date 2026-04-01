@@ -203,8 +203,35 @@ lock_acquire (struct lock *lock)
   ASSERT (!intr_context ()); //
   ASSERT (!lock_held_by_current_thread (lock));
 
+  /* 1.2.2 */
+  // DEBUG: 修改donor_list, 必须禁止中断!
+  // 保证原子性!
+  enum intr_level old_level;
+  old_level = intr_disable ();
+
+  struct thread *cur = thread_current();
+  if (lock->holder != NULL) 
+  {
+      cur->waiting_on_lock = lock;
+      /* !!!在这里把自己加入到holder的 donors_list，仅此一次 */
+      if(lock->holder->priority < cur->priority){
+        list_insert_ordered (&lock->holder->donors_list, &cur->donors_elem, 
+                            priority_compare, NULL);
+        /* 然后开始递归传导priority */
+        thread_nested_donation();
+      }
+  }
+  intr_set_level (old_level); 
+  // !!!!!绝对不要在同步源语里加printf!
+  //printf("thread %s acquiring lock\n", cur->name); //debug 
   sema_down (&lock->semaphore);
+
+  //拿到锁之后,关intr
+  old_level = intr_disable ();
+  cur->waiting_on_lock = NULL; // 必须清空自己等的锁
   lock->holder = thread_current ();
+  intr_set_level (old_level);
+
 }
 
 /** Tries to acquires LOCK and returns true if successful or false
@@ -238,8 +265,16 @@ lock_release (struct lock *lock)
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
 
+  /* 1.2.2 */
+  //DEBUG: 原子性
+  enum intr_level old_level = intr_disable ();
+  thread_recall_donation(lock);
   lock->holder = NULL;
+  intr_set_level (old_level);
+
   sema_up (&lock->semaphore);
+  /* 尝试抢占 */
+  thread_test_yield(); 
 }
 
 /** Returns true if the current thread holds LOCK, false

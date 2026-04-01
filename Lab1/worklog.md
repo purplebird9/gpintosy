@@ -69,7 +69,45 @@ FAIL tests/threads/mlfqs-block
 
 - struct thread
 - 递归函数donate, 递归回溯recall
+    - 本来想在donate函数中加入donors_list, 但是有重复添加的问题, 所以把这一步放进lock_acquire的实现中.
+    - 总之不要在递归/循环捐赠函数里反复调用 list_insert。插入动作交给 lock_acquire（被阻塞前入队），递归函数只负责顺着 waiting_on_lock -> holder 这条线把 priority 数值改掉。
 - 写进lock_acquire
 - 写进lock_release, 只移除这个lock对应的donor
+
+```
+pass tests/threads/alarm-single
+pass tests/threads/alarm-multiple
+pass tests/threads/alarm-simultaneous
+pass tests/threads/alarm-priority
+pass tests/threads/alarm-zero
+pass tests/threads/alarm-negative
+pass tests/threads/priority-change
+pass tests/threads/priority-donate-one
+pass tests/threads/priority-donate-multiple
+pass tests/threads/priority-donate-multiple2
+pass tests/threads/priority-donate-nest
+//
+FAIL tests/threads/priority-donate-sema
+FAIL tests/threads/priority-donate-lower
+FAIL tests/threads/priority-fifo
+pass tests/threads/priority-preempt
+FAIL tests/threads/priority-sema
+FAIL tests/threads/priority-condvar
+FAIL tests/threads/priority-donate-chain
+//
+FAIL tests/threads/mlfqs-load-1
+FAIL tests/threads/mlfqs-load-60
+FAIL tests/threads/mlfqs-load-avg
+FAIL tests/threads/mlfqs-recent-1
+pass tests/threads/mlfqs-fair-2
+pass tests/threads/mlfqs-fair-20
+FAIL tests/threads/mlfqs-nice-2
+FAIL tests/threads/mlfqs-nice-10
+FAIL tests/threads/mlfqs-block
+```
+
+- test1 不知道为啥过了
+- 在lock函数里关中断避免了race, 但是结果没变
+- compare逻辑的问题, 需要写两个函数, 区分donor_elem和elem!
 
 

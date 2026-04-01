@@ -108,6 +108,60 @@ void thread_test_yield(void)
   }
 }
 
+/** 1.2.2:
+ * priority donation: recursive, for nested donation
+ */
+void thread_nested_donation(void){
+  struct thread *cur = thread_current();
+  int depth = 0; //最大递归深度
+  while (cur->waiting_on_lock != NULL && depth < 8) 
+  {
+    struct lock *lock = cur->waiting_on_lock;
+    struct thread *holder = lock->holder;
+    if (holder == NULL || holder->priority >= cur->priority)//end chain
+      break;
+    holder->priority = cur->priority; //donate
+    //list_insert_ordered(&holder->donors_list, &cur->donors_elem,priority_compare,NULL); //add cur to donee's donors list
+    cur = holder; //recursive
+    depth++;
+  }
+}
+
+/** 1.2.2:
+ * recall donation: 
+ * when releasing a lock, remove all donations related to this lock; update priority
+ */
+void thread_recall_donation(struct lock *lock){
+  struct thread *cur = thread_current();
+  struct list_elem *e = list_begin(&cur->donors_list);
+  while (e != list_end(&cur->donors_list)) 
+  {
+    struct thread *t = list_entry(e, struct thread, donors_elem);
+    if (t->waiting_on_lock == lock) //donation is related to this lock
+    {
+      e = list_remove(e); //remove from donors list
+    } 
+    else 
+    {
+      e = list_next(e);
+    }
+  }
+  //update priority
+  cur->priority = cur->base_priority;
+  if (!list_empty(&cur->donors_list)) 
+  {
+    //TODO: 修改,要在donors list中找到最高优先级的,而不是直接取front.实现一个辅助函数,比如list_sort或者list_max
+    //总之先保证list是有序的
+    ASSERT (!list_empty(&cur->donors_list));    //DEBUG: 确保donors_list不是空的
+    struct thread *max_donor = list_entry(list_front(&cur->donors_list), struct thread, donors_elem);
+    if (max_donor->priority > cur->priority)
+      cur->priority = max_donor->priority;
+  }
+}
+
+
+
+
 
 /** ---Existing--- */
 
@@ -526,6 +580,10 @@ init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
+  /* 1.2.2: init new properties*/
+  t->base_priority = priority;
+  list_init(&t->donors_list);
+  t->waiting_on_lock = NULL;
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);

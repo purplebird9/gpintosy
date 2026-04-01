@@ -98,7 +98,7 @@ struct thread
 
     /* LAB1.2.2: priority donation*/
     struct list_elem donors_elem;              /**< List element for donors list. */
-    struct list donors;                       /**< List of threads that donated priority to this thread. */
+    struct list donors_list;                       /**< List of threads that donated priority to this thread. */
     int base_priority;                    /**< the thread's Original priority before donation. */
     struct lock *waiting_on_lock;              /**< the lock that the thread is waiting on (if any) */
 
@@ -122,6 +122,8 @@ extern bool thread_mlfqs;
 /* ---LAB1 NEW--- */
 bool priority_compare(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
 void thread_test_yield(void);
+void thread_nested_donation(void);
+void thread_recall_donation(struct lock *lock);
 /* -------------- */
 
 void thread_init (void);

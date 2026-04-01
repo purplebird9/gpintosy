@@ -11,6 +11,8 @@ debugpintos
 杀死所有容器
 docker stop $(docker ps -q)
 
+运行单个测例
+make tests/threads/alarm-multiple.result 
 
 
 ripgrep:
