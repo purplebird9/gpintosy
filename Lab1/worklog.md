@@ -58,7 +58,7 @@ FAIL tests/threads/mlfqs-block
 - TODO: task1, optimization
 - I think I can begin 2.2 priority donation
 
-**14:00-16:30**
+**14:00-20:00**
 - all scenarios? consider lock first
 - donation: 
     - if (lock_try_acquire fail): check lock-holder's priority; **donate_priority()**
@@ -109,5 +109,33 @@ FAIL tests/threads/mlfqs-block
 - test1 不知道为啥过了
 - 在lock函数里关中断避免了race, 但是结果没变
 - compare逻辑的问题, 需要写两个函数, 区分donor_elem和elem!
+- 结果没变
+- synch.c: blocked的线程priority也会变化, 所以唤醒前必须重新排序!
+- 加了一堆list_sort
+
+```
+pass tests/threads/alarm-single
+pass tests/threads/alarm-multiple
+pass tests/threads/alarm-simultaneous
+pass tests/threads/alarm-priority
+pass tests/threads/alarm-zero
+pass tests/threads/alarm-negative
+FAIL tests/threads/priority-change
+pass tests/threads/priority-donate-one
+pass tests/threads/priority-donate-multiple
+pass tests/threads/priority-donate-multiple2
+pass tests/threads/priority-donate-nest
+pass tests/threads/priority-donate-sema
+pass tests/threads/priority-donate-lower
+FAIL tests/threads/priority-fifo
+pass tests/threads/priority-preempt
+pass tests/threads/priority-sema
+pass tests/threads/priority-condvar
+pass tests/threads/priority-donate-chain
+```
+
+
+
+
 
 

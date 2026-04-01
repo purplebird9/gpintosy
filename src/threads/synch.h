@@ -3,6 +3,8 @@
 
 #include <list.h>
 #include <stdbool.h>
+#include <debug.h>
+
 
 /** A counting semaphore. */
 struct semaphore 
@@ -10,6 +12,18 @@ struct semaphore
     unsigned value;             /**< Current value. */
     struct list waiters;        /**< List of waiting threads. */
   };
+
+/** One semaphore in a list. */
+struct semaphore_elem 
+  {
+    struct list_elem elem;              /**< List element. */
+    struct semaphore semaphore;         /**< This semaphore. */
+  };
+
+/* ---NEW---*/
+bool cond_priority_compare (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
+
+
 
 void sema_init (struct semaphore *, unsigned value);
 void sema_down (struct semaphore *);

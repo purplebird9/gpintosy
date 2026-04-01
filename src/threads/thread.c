@@ -85,6 +85,10 @@ bool priority_compare(const struct list_elem *a, const struct list_elem *b, void
   struct thread *tb = list_entry(b, struct thread, elem);
   return ta->priority > tb->priority; //降序
 }
+// 1.2.2: 比较donor优先级的函数, 因为elem和donor_elem不能混用
+bool donor_priority_compare (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED) { 
+    return list_entry(a, struct thread, donors_elem)->priority > list_entry(b, struct thread, donors_elem)->priority; 
+}
 
 /** 1.2.1: 
  * 辅助函数: 通用检查, 如果cur优先级小于刚刚添加的ready_list首位优,则cur立刻yield
@@ -150,9 +154,9 @@ void thread_recall_donation(struct lock *lock){
   cur->priority = cur->base_priority;
   if (!list_empty(&cur->donors_list)) 
   {
-    //TODO: 修改,要在donors list中找到最高优先级的,而不是直接取front.实现一个辅助函数,比如list_sort或者list_max
-    //总之先保证list是有序的
-    ASSERT (!list_empty(&cur->donors_list));    //DEBUG: 确保donors_list不是空的
+    //强制保证list是有序的,防止变动
+    list_sort(&cur->donors_list, donor_priority_compare, NULL);
+
     struct thread *max_donor = list_entry(list_front(&cur->donors_list), struct thread, donors_elem);
     if (max_donor->priority > cur->priority)
       cur->priority = max_donor->priority;
@@ -448,11 +452,29 @@ thread_foreach (thread_action_func *func, void *aux)
 void
 thread_set_priority (int new_priority) 
 {
-  int old_priority = thread_get_priority();
-  thread_current ()->priority = new_priority;
-  /* 1.2.1: If the thread lowers its priority such that not highest, yield() immediately */
-  if (new_priority < old_priority)
-    thread_test_yield(); 
+  struct thread *cur = thread_current ();
+  int old_priority = cur->priority;
+  
+  /* 1.2.2 */
+  // 1. 更新 base_priority
+  cur->base_priority = new_priority;
+  cur->priority = new_priority;
+
+  // 2. 检查捐赠列表，如果有更高的捐赠者，恢复捐赠的优先级
+  if (!list_empty(&cur->donors_list))
+  {
+    // 确保列表有序，取出最高优先级的捐赠者
+    list_sort(&cur->donors_list, donor_priority_compare, NULL);
+    struct thread *max_donor = list_entry(list_front(&cur->donors_list), struct thread, donors_elem);
+    if (max_donor->priority > cur->priority)
+    {
+      cur->priority = max_donor->priority;
+    }
+
+    /* 1.2.1: If the thread lowers its priority such that not highest, test yield*/
+    if (cur->priority < old_priority)
+      thread_test_yield();
+  }
 }
 
 /** Returns the current thread's priority. */

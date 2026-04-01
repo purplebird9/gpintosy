@@ -121,6 +121,7 @@ extern bool thread_mlfqs;
 
 /* ---LAB1 NEW--- */
 bool priority_compare(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
+bool donor_priority_compare(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);// 1.2.2
 void thread_test_yield(void);
 void thread_nested_donation(void);
 void thread_recall_donation(struct lock *lock);
