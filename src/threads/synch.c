@@ -225,6 +225,14 @@ lock_init (struct lock *lock)
 void
 lock_acquire (struct lock *lock)
 {
+  /* 1.3 mlfqs禁用donation*/
+    if (thread_mlfqs) {
+    sema_down (&lock->semaphore);
+    lock->holder = thread_current ();
+    return ;
+  }
+
+
   ASSERT (lock != NULL);
   ASSERT (!intr_context ()); //
   ASSERT (!lock_held_by_current_thread (lock));
@@ -288,16 +296,22 @@ lock_try_acquire (struct lock *lock)
 void
 lock_release (struct lock *lock) 
 {
+  //lock->holder = NULL;
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
 
   /* 1.2.2 */
   //DEBUG: 原子性
+  // 1.3: 加入mlfqs
+  if(!thread_mlfqs){
   enum intr_level old_level = intr_disable ();
   thread_recall_donation(lock);
   lock->holder = NULL;
   intr_set_level (old_level);
-
+  }else{
+    //mlfqs不需要donation, 直接释放锁
+  lock->holder = NULL;
+  }
   sema_up (&lock->semaphore);
   /* 尝试抢占 */
   thread_test_yield(); 

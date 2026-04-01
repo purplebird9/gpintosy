@@ -16,7 +16,7 @@
 #endif
 
 /* 1.3 */
-#include "threads/arithmetic.h"
+#include "threads/fp.h"
 int load_avg; //系统平均负载, 17.14.1: fixed-point, Q=14
 
 
@@ -231,6 +231,7 @@ mlfqs_recalculate_priority (void)
     mlfqs_calculate_priority (t);
   }
 }
+
 
 
 
@@ -521,6 +522,13 @@ thread_foreach (thread_action_func *func, void *aux)
 void
 thread_set_priority (int new_priority) 
 {
+  /* 1.3: mlfqs禁用*/
+  if (thread_mlfqs) {
+    return ;
+  }
+
+
+
   struct thread *cur = thread_current ();
   int old_priority = cur->priority;
   
@@ -553,36 +561,50 @@ thread_get_priority (void)
   return thread_current ()->priority;
 }
 
+
+/** 1.3: Implementation */
 /** Sets the current thread's nice value to NICE. */
 void
 thread_set_nice (int nice UNUSED) 
-{
-  /* Not yet implemented. */
+{  
+  enum intr_level old_level = intr_disable ();
+  thread_current ()->nice = nice;
+  mlfqs_calculate_priority (thread_current ());
+  thread_test_yield ();
+  intr_set_level (old_level);
 }
 
 /** Returns the current thread's nice value. */
 int
 thread_get_nice (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  enum intr_level old_level = intr_disable ();
+  int nice = thread_current ()-> nice;
+  intr_set_level (old_level);
+  return nice;  return 0;
 }
 
 /** Returns 100 times the system load average. */
 int
 thread_get_load_avg (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  enum intr_level old_level = intr_disable ();
+  int load_avg_value = fp_to_int_round (mult_mixed (load_avg, 100));
+  intr_set_level (old_level);
+  return load_avg_value;  return 0;
 }
 
 /** Returns 100 times the current thread's recent_cpu value. */
 int
 thread_get_recent_cpu (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  enum intr_level old_level = intr_disable ();
+  int recent_cpu= fp_to_int_round (mult_mixed (thread_current ()->recent_cpu, 100));
+  intr_set_level (old_level);
+  return recent_cpu;  return 0;
 }
+
+/** ----------- */
 
 /** Idle thread.  Executes when no other thread is ready to run.
 
@@ -799,3 +821,5 @@ allocate_tid (void)
 /** Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
+
+

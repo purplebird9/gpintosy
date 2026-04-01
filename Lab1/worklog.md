@@ -137,13 +137,22 @@ pass tests/threads/priority-donate-chain
 - 1.2.2问题: fifo timeout(page_fault), "doubled test names"
 
 
-**20:00-20:30**
+**20:00-23:00**
 - start 1.3
 - struct thread增加nice,recent_cpu,load_avg并初始化
-- TODO: list_sort不稳定排序,会破坏fifo! 要全替换成手写的稳定排序?
-
-
-
+- TODO: list_sort不稳定排序,会破坏fifo? 要全替换别的逻辑?
+- pass了大部分mlfqs, 但是前面panic了. 
+```
+Kernel panic in run: PANIC at ../../threads/synch.c:309 in lock_release(): assertion `lock_held_by_current_thread (lock)' failed.
+Call stack: 0xc002a0dd 0xc0023605 0xc0021b4d 0xc0021006 0xc00202df
+Translation of call stack:
+0xc002a0dd: debug_panic (.../../lib/kernel/debug.c:38)
+0xc0023605: lock_release (...../../threads/synch.c:313)
+0xc0021b4d: allocate_tid (..../../threads/thread.c:816)
+0xc0021006: thread_init (..../../threads/thread.c:266)
+0xc00202df: pintos_init (...d/../../threads/init.c:93)
+```
+- 修改lock_release(), 已解决
 
 
 
