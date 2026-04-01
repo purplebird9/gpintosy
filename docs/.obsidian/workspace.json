@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "p0.md",
-                "mode": "preview",
+                "file": "p1.md",
+                "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "p0"
+              "title": "p1"
             }
           }
         ]
@@ -185,8 +185,12 @@
   },
   "active": "d36f305698fe8b81",
   "lastOpenFiles": [
-    "p0_2400013053.pdf",
+    "0/image-3.png",
+    "0/p0_prettier.pdf",
+    "0/p0_2400013053.pdf",
+    "0/p0.md",
     "p1.md",
+    "p0_2400013053.pdf",
     "image.png",
     "屏幕截图 2026-03-09 202424.png"
   ]

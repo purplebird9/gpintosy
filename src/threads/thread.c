@@ -75,6 +75,42 @@ static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
 
+
+/** ---LAB1 NEW--- */
+/** 1.2.1: list_insert_ordered */
+/* 辅助函数:比较优先级 */
+bool priority_compare(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
+{
+  struct thread *ta = list_entry(a, struct thread, elem);
+  struct thread *tb = list_entry(b, struct thread, elem);
+  return ta->priority > tb->priority; //降序
+}
+
+/** 1.2.1: 
+ * 辅助函数: 通用检查, 如果cur优先级小于刚刚添加的ready_list首位优,则cur立刻yield
+ * When a thread is added to the ready list that has a higher priority than the currently running thread, 
+ * the current thread should immediately yield the processor to the new thread. 
+ * */
+void thread_test_yield(void)
+{
+  if (!list_empty(&ready_list))
+  {
+    struct thread *cur = thread_current();
+    struct thread *front = list_entry(list_front(&ready_list), struct thread, elem);
+    if (cur->priority < front->priority){
+      //not in intr
+      if (!intr_context())
+        thread_yield();
+      else
+        /* 如果在中断中，标记下次返回时切换 */
+        intr_yield_on_return ();
+    }
+  }
+}
+
+
+/** ---Existing--- */
+
 /** Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
    general and it is possible in this case only because loader.S
@@ -205,11 +241,16 @@ thread_create (const char *name, int priority,
   /* Add to run queue. */
   thread_unblock (t);
 
-  /* 1.2.1 */
-  /* If this thread has higher priority than current, current yield()*/
-  if (priority > thread_get_priority())
-    thread_yield();
+
+//old
+//  //If this thread has higher priority than current, current yield()
+//  if (priority > thread_get_priority())
+//    thread_yield(); 
   
+  /* 1.2.1 检查优先级*/
+    thread_test_yield ();
+
+ 
   return tid;
 }
 
@@ -239,14 +280,6 @@ thread_block (void)
    update other data. */
 
 
-/** 1.2.1: list_insert_ordered */
-/* 辅助函数:比较优先级 */
-bool priority_compare(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
-{
-  struct thread *ta = list_entry(a, struct thread, elem);
-  struct thread *tb = list_entry(b, struct thread, elem);
-  return ta->priority > tb->priority; //降序
-}
 
 
 void
@@ -363,9 +396,9 @@ thread_set_priority (int new_priority)
 {
   int old_priority = thread_get_priority();
   thread_current ()->priority = new_priority;
-  /* 1.2.1: If the thread lowers its priority, yield() immediately */
+  /* 1.2.1: If the thread lowers its priority such that not highest, yield() immediately */
   if (new_priority < old_priority)
-    thread_yield();
+    thread_test_yield(); 
 }
 
 /** Returns the current thread's priority. */

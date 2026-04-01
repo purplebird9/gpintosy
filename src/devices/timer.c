@@ -204,6 +204,8 @@ timer_interrupt (struct intr_frame *args UNUSED)
     if(t->wakeup_ticks <= ticks){
       e = list_remove (e);//DEBUG: 迭代指针问题
       thread_unblock (t);
+      /*1.2.1: check if need to yield*/
+      thread_test_yield(); 
     }
     else
       e = list_next (e);

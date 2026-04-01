@@ -11,7 +11,7 @@
 
 #include <stdint.h>
 
-/* 定义定点数的位移量 q 为 14 */
+/* fractional bits: q=14 */
 #define FP_Q 14
 #define FP_F (1 << FP_Q)
 
@@ -20,13 +20,13 @@ typedef int fp_t;
 
 /* --- 转换操作 --- */
 
-/* 整数 n 转换为定点数: n * f */
+/* Convert n to fixed point: n * f */
 #define CONVERT_TO_FP(n) ((n) * (FP_F))
 
-/* 定点数 x 转换为整数 (舍入到零): x / f */
+/* Convert x to integer (rounding toward zero): x / f */
 #define CONVERT_TO_INT_ZERO(x) ((x) / (FP_F))
 
-/* 定点数 x 转换为整数 (舍入到最近): 
+/* Convert x to integer (rounding to nearest): 
    x >= 0 ? (x + f/2) / f : (x - f/2) / f */
 #define CONVERT_TO_INT_NEAR(x) ((x) >= 0 ? \
     (((x) + (FP_F) / 2) / (FP_F)) : \
@@ -35,31 +35,31 @@ typedef int fp_t;
 
 /* --- 算术操作 --- */
 
-/* 定点数相加: x + y */
+/* Add x and y */
 #define ADD_FP(x, y) ((x) + (y))
 
-/* 定点数相减: x - y */
+/* Subtract y from x */
 #define SUB_FP(x, y) ((x) - (y))
 
-/* 定点数 x 加整数 n: x + n * f */
+/* Add x and integer n: x + n * f */
 #define ADD_FP_INT(x, n) ((x) + (n) * (FP_F))
 
-/* 定点数 x 减整数 n: x - n * f */
+/* Subtract integer n from x: x - n * f */
 #define SUB_FP_INT(x, n) ((x) - (n) * (FP_F))
 
-/* 定点数相乘: ((int64_t) x) * y / f 
+/* Multiply x by y: ((int64_t) x) * y / f 
    注意：必须先转换为 64 位，否则 32 位乘法会溢出 */
 #define MUL_FP(x, y) ((fp_t) (((int64_t) (x)) * (y) / (FP_F)))
 
-/* 定点数 x 乘以整数 n: x * n */
+/* Multiply x by n: x * n */
 #define MUL_FP_INT(x, n) ((x) * (n))
 
-/* 定点数相除: ((int64_t) x) * f / y 
+/* Divide x by y: ((int64_t) x) * f / y 
    注意：必须先转换为 64 位，否则 32 位乘法会溢出 */
 #define DIV_FP(x, y) ((fp_t) (((int64_t) (x)) * (FP_F) / (y)))
 
-/* 定点数 x 除以整数 n: x / n */
+/* Divide x by n: x / n */
 #define DIV_FP_INT(x, n) ((x) / (n))
 
-#endif /* threads/fixed-point.h */
+#endif /* threads/arithmetic.h */
 

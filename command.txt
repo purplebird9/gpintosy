@@ -10,3 +10,13 @@ debugpintos
 
 杀死所有容器
 docker stop $(docker ps -q)
+
+
+
+ripgrep:
+# 1. 安装 wget (如果没有的话)
+apt-get update && apt-get install -y wget
+# 2. 下载 ripgrep (以 13.0.0 版本为例，针对 amd64 架构)
+wget https://github.com/BurntSushi/ripgrep/releases/download/13.0.0/ripgrep_13.0.0_amd64.deb
+# 3. 安装
+dpkg -i ripgrep_13.0.0_amd64.deb
