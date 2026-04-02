@@ -314,7 +314,8 @@ lock_release (struct lock *lock)
   }
   sema_up (&lock->semaphore);
   /* 尝试抢占 */
-  thread_test_yield(); 
+  if(!list_empty) //DEBUG
+    thread_test_yield(); 
 }
 
 /** Returns true if the current thread holds LOCK, false

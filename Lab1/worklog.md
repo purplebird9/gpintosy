@@ -146,7 +146,10 @@ Translation of call stack:
 
 
 ### 4.2
+**10:00-11:00**
 - thread_set_priority里挪一个括号,priority全pass...
 - load_avg fail
+
+- debug in lock_release(), ALL PASSED~
 
 
