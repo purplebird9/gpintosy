@@ -314,7 +314,7 @@ lock_release (struct lock *lock)
   }
   sema_up (&lock->semaphore);
   /* 尝试抢占 */
-  if(!list_empty) //DEBUG
+  if(!list_empty) // 1.3_DEBUG
     thread_test_yield(); 
 }
 

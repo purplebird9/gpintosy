@@ -20,6 +20,15 @@
 /** 1.1: add struct list sleep_list */
 static struct list sleep_list;
 
+/* 1.1: 比较两个线程的 wakeup_ticks */
+static bool 
+cmp_wakeup_ticks (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED) 
+{
+  struct thread *ta = list_entry (a, struct thread, elem);
+  struct thread *tb = list_entry (b, struct thread, elem);
+  return ta->wakeup_ticks < tb->wakeup_ticks;
+}
+
 /** Number of timer ticks since OS booted. */
 static int64_t ticks;
 
@@ -103,17 +112,21 @@ timer_sleep (int64_t ticks)
     thread_yield ();
 */
   /*1.1: new timer_sleep*/
-  //DEBUG: ASSERT (intr_get_level () == INTR_OFF); This may fail!!!
-  enum intr_level old_level = intr_disable (); 
+  //DEBUG: ASSERT (intr_get_level () == INTR_OFF); This is wrong.
 
 
   struct thread *cur = thread_current();
+  enum intr_level old_level = intr_disable (); 
+
+  /* ---CRITICAL--- */
   /*put thread into sleep_list*/
   cur->wakeup_ticks = start + ticks;
-  list_push_back (&sleep_list, &cur->elem);
+  /* 1.1 优化:让handler不要遍历*/
+  list_insert_ordered (&sleep_list, &cur->elem, cmp_wakeup_ticks, NULL);
   /*block thread*/
   thread_block();
-  /*restart interrupt*/
+  /* ---CRITICAL--- */
+
   intr_set_level (old_level);
 }
 
@@ -188,7 +201,6 @@ timer_print_stats (void)
 }
 
 /** Timer interrupt handler. */
-/* TODO: optimize */
 static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
@@ -209,19 +221,22 @@ timer_interrupt (struct intr_frame *args UNUSED)
 
   
   /*1.1: new timer_interrupt*/
-  struct list_elem *e = list_begin (&sleep_list);
-  while (e != list_end (&sleep_list)) 
+  /* OPTIMIZED */
+  while (!list_empty (&sleep_list)) 
   {
+    struct list_elem *e = list_front (&sleep_list);
     struct thread *t = list_entry (e, struct thread, elem);
+    
     /*time up*/
     if(t->wakeup_ticks <= ticks){
-      e = list_remove (e);//DEBUG: 迭代指针问题
-      thread_unblock (t);
+      list_pop_front (&sleep_list); // 只需要移出队头
+      thread_unblock (t);           // 加入ready_list
       /*1.2.1: check if need to yield*/
       thread_test_yield(); 
     }
     else
-      e = list_next (e);
+        /* 如果队首的线程时间还没到，因为队列是有序的，后面的肯定也没到，直接退出 */
+        break;
   }
 }
 
