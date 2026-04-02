@@ -194,7 +194,7 @@ timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
   thread_tick ();
-  /* 1.3: 新条件*/
+  /* 1.3: mlfqs下,定期更新priority, recent_cpu, load_avg*/
     if (thread_mlfqs) {
     mlfqs_increment_recent_cpu ();
     if (ticks % 4 == 0) {

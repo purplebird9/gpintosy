@@ -94,16 +94,6 @@ pass tests/threads/priority-preempt
 FAIL tests/threads/priority-sema
 FAIL tests/threads/priority-condvar
 FAIL tests/threads/priority-donate-chain
-//
-FAIL tests/threads/mlfqs-load-1
-FAIL tests/threads/mlfqs-load-60
-FAIL tests/threads/mlfqs-load-avg
-FAIL tests/threads/mlfqs-recent-1
-pass tests/threads/mlfqs-fair-2
-pass tests/threads/mlfqs-fair-20
-FAIL tests/threads/mlfqs-nice-2
-FAIL tests/threads/mlfqs-nice-10
-FAIL tests/threads/mlfqs-block
 ```
 
 - test1 不知道为啥过了
@@ -154,5 +144,9 @@ Translation of call stack:
 ```
 - 修改lock_release(), 已解决
 
+
+### 4.2
+- thread_set_priority里挪一个括号,priority全pass...
+- load_avg fail
 
 

@@ -16,7 +16,7 @@
 #endif
 
 /* 1.3 */
-#include "threads/fp.h"
+#include "threads/arithmetic.h"
 int load_avg; //系统平均负载, 17.14.1: fixed-point, Q=14
 
 
@@ -166,12 +166,13 @@ void thread_recall_donation(struct lock *lock){
 }
 
 /* 1.3 计算优先级, recent_cpu, load_avg的函数*/
+/* 用arithmetic.h的宏 */
 void
 mlfqs_calculate_priority (struct thread *t)
 {
   if (t == idle_thread) 
     return ;
-  t->priority = fp_to_int (add_mixed (div_mixed (t->recent_cpu, -4), PRI_MAX - t->nice * 2));
+  t->priority = FP_TO_INT_ZERO (ADD_FP_INT(DIV_FP_INT (t->recent_cpu, -4), PRI_MAX - t->nice * 2));
 }
 
 void
@@ -179,7 +180,7 @@ mlfqs_calculate_recent_cpu (struct thread *t)
 {
   if (t == idle_thread)
     return ;
-  t->recent_cpu = add_mixed (mult_fp (div_fp (mult_mixed (load_avg, 2), add_mixed (mult_mixed (load_avg, 2), 1)), t->recent_cpu), t->nice);
+  t->recent_cpu = ADD_FP_INT (MUL_FP (DIV_FP (MUL_FP_INT (load_avg, 2), ADD_FP_INT (MUL_FP_INT (load_avg, 2), 1)), t->recent_cpu), t->nice);
 }
 
 void 
@@ -192,24 +193,22 @@ mlfqs_calculate_load_avg (void)
   else
     ready_threads = list_size (&ready_list) + 1;
 
-  load_avg = add_fp (mult_fp (div_fp (int_to_fp (59), int_to_fp (60)), load_avg), 
-                     mult_mixed (div_fp (int_to_fp (1), int_to_fp (60)), ready_threads));
+  load_avg = ADD_FP (MUL_FP (DIV_FP (INT_TO_FP (59), INT_TO_FP (60)), load_avg), 
+                     MUL_FP_INT (DIV_FP (INT_TO_FP (1), INT_TO_FP (60)), ready_threads));
 }
 
 /*
-现在，我们来创建当每个值发生变化时要执行的函数。这些值共有 3 种变化情况。
-
-每隔 1 个时钟周期，将运行线程的 recent_cpu 值加 1。
-每隔 4 个游戏刻重新计算所有线程的优先级
+每个值发生更新时要执行的函数。
+每隔 1 个时钟周期，运行线程的 recent_cpu 值加 1。
+每隔 4 个tick重新计算所有线程的优先级
 每秒重新计算所有线程的 recent_cpu 和 load_avg 值
 */
 void
 mlfqs_increment_recent_cpu (void)
 {
   if (thread_current () != idle_thread)
-    thread_current ()->recent_cpu = add_mixed (thread_current ()->recent_cpu, 1);
+    thread_current ()->recent_cpu = ADD_FP_INT (thread_current ()->recent_cpu, 1);
 }
-
 void
 mlfqs_recalculate_recent_cpu (void)
 {
@@ -220,7 +219,6 @@ mlfqs_recalculate_recent_cpu (void)
     mlfqs_calculate_recent_cpu (t);
   }
 }
-
 void
 mlfqs_recalculate_priority (void)
 {
@@ -528,7 +526,6 @@ thread_set_priority (int new_priority)
   }
 
 
-
   struct thread *cur = thread_current ();
   int old_priority = cur->priority;
   
@@ -547,11 +544,13 @@ thread_set_priority (int new_priority)
     {
       cur->priority = max_donor->priority;
     }
+  }// 1.2.2 这里括号作用域打错了, 改一下全都pass了哈哈哈哈哈哈
 
-    /* 1.2.1: If the thread lowers its priority such that not highest, test yield*/
-    if (cur->priority < old_priority)
-      thread_test_yield();
-  }
+
+  /* 1.2.1: If the thread lowers its priority such that not highest, test yield*/
+  if (cur->priority < old_priority)
+    thread_test_yield();
+  
 }
 
 /** Returns the current thread's priority. */
@@ -564,6 +563,7 @@ thread_get_priority (void)
 
 /** 1.3: Implementation */
 /** Sets the current thread's nice value to NICE. */
+/* 全部关中断 */
 void
 thread_set_nice (int nice UNUSED) 
 {  
@@ -581,7 +581,7 @@ thread_get_nice (void)
   enum intr_level old_level = intr_disable ();
   int nice = thread_current ()-> nice;
   intr_set_level (old_level);
-  return nice;  return 0;
+  return nice;
 }
 
 /** Returns 100 times the system load average. */
@@ -589,9 +589,9 @@ int
 thread_get_load_avg (void) 
 {
   enum intr_level old_level = intr_disable ();
-  int load_avg_value = fp_to_int_round (mult_mixed (load_avg, 100));
+  int load_avg_value = FP_TO_INT_ROUND (MUL_FP_INT (load_avg, 100));
   intr_set_level (old_level);
-  return load_avg_value;  return 0;
+  return load_avg_value;
 }
 
 /** Returns 100 times the current thread's recent_cpu value. */
@@ -599,9 +599,9 @@ int
 thread_get_recent_cpu (void) 
 {
   enum intr_level old_level = intr_disable ();
-  int recent_cpu= fp_to_int_round (mult_mixed (thread_current ()->recent_cpu, 100));
+  int recent_cpu= FP_TO_INT_ROUND (MUL_FP_INT (thread_current ()->recent_cpu, 100));
   intr_set_level (old_level);
-  return recent_cpu;  return 0;
+  return recent_cpu;
 }
 
 /** ----------- */

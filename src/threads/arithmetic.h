@@ -21,14 +21,14 @@ typedef int fp_t;
 /* --- 转换操作 --- */
 
 /* Convert n to fixed point: n * f */
-#define CONVERT_TO_FP(n) ((n) * (FP_F))
+#define INT_TO_FP(n) ((n) * (FP_F))
 
 /* Convert x to integer (rounding toward zero): x / f */
-#define CONVERT_TO_INT_ZERO(x) ((x) / (FP_F))
+#define FP_TO_INT_ZERO(x) ((x) / (FP_F))
 
 /* Convert x to integer (rounding to nearest): 
    x >= 0 ? (x + f/2) / f : (x - f/2) / f */
-#define CONVERT_TO_INT_NEAR(x) ((x) >= 0 ? \
+#define FP_TO_INT_ROUND(x) ((x) >= 0 ? \
     (((x) + (FP_F) / 2) / (FP_F)) : \
     (((x) - (FP_F) / 2) / (FP_F)))
 
