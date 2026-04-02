@@ -167,7 +167,7 @@ void thread_recall_donation(struct lock *lock){
 
 /* 1.3 计算优先级, recent_cpu, load_avg的函数*/
 /* 用arithmetic.h的宏 */
-void
+static void
 mlfqs_calculate_priority (struct thread *t)
 {
   if (t == idle_thread) 
@@ -175,7 +175,7 @@ mlfqs_calculate_priority (struct thread *t)
   t->priority = FP_TO_INT_ZERO (ADD_FP_INT(DIV_FP_INT (t->recent_cpu, -4), PRI_MAX - t->nice * 2));
 }
 
-void
+static void
 mlfqs_calculate_recent_cpu (struct thread *t)
 {
   if (t == idle_thread)

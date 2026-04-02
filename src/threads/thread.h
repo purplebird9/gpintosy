@@ -129,6 +129,12 @@ bool donor_priority_compare(const struct list_elem *a, const struct list_elem *b
 void thread_test_yield(void);
 void thread_nested_donation(void);
 void thread_recall_donation(struct lock *lock);
+
+/* 1.3 MLFQS*/
+void mlfqs_calculate_load_avg (void);
+void mlfqs_increment_recent_cpu (void);
+void mlfqs_recalculate_recent_cpu (void);
+void mlfqs_recalculate_priority (void);
 /* -------------- */
 
 void thread_init (void);
