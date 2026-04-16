@@ -1,3 +1,4 @@
-*.txt
+command.txt
+cat.txt
 *.pdf
 /docs/.obsidian
