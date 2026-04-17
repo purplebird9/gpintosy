@@ -15,6 +15,23 @@ syscall_init (void)
 static void
 syscall_handler (struct intr_frame *f UNUSED) 
 {
-  printf ("system call!\n");
-  thread_exit ();
+  // 2.1
+  /* 获取系统调用号 */
+  int syscall_num = 0;
+  if (f != NULL && f->esp != NULL)
+    syscall_num = *(int *)(f->esp);
+
+  switch (syscall_num) {
+    case SYS_EXIT: {
+      /* 取参数 */
+      int status = *((int *)f->esp + 1);
+      thread_current()->exit_status = status;
+      thread_exit();
+      break;
+    }
+    default:
+      printf ("system call!\n");
+      thread_exit ();
+      break;
+  }
 }

@@ -98,6 +98,20 @@ process_exit (void)
   struct thread *cur = thread_current ();
   uint32_t *pd;
 
+// 2.1 Process Termination Messagess
+#ifdef USERPROG
+  /* 打印退出信息，仅针对用户进程，且不是halt */
+  /* 需要在struct thread中添加exit_status，假设已添加int exit_status; 并在syscall.c中设置 */
+  if (cur->pagedir != NULL && strcmp(cur->name, "main") != 0 && strcmp(cur->name, "idle") != 0) {
+    /* 打印进程名（不带参数） */
+    char proc_name[16];
+    strlcpy(proc_name, cur->name, sizeof(proc_name));
+    char *space = strchr(proc_name, ' ');
+    if (space) *space = '\0';
+    printf("%s: exit(%d)\n", proc_name, cur->exit_status);
+  }
+#endif
+
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;

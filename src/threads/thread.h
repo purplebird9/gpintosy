@@ -113,8 +113,13 @@ struct thread
     uint32_t *pagedir;                  /**< Page directory. */
 #endif
 
-    /* Owned by thread.c. */
-    unsigned magic;                     /**< Detects stack overflow. */
+   /* Owned by thread.c. */
+   unsigned magic;                     /**< Detects stack overflow. */
+
+//2.1
+#ifdef USERPROG
+   int exit_status;                    /**< Exit status for user process. */
+#endif
   };
 
 /** If false (default), use round-robin scheduler.
