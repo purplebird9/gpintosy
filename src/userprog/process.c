@@ -20,6 +20,8 @@
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
+static bool tid_is_alive (tid_t tid);
+static void find_tid_action (struct thread *t, void *aux);
 
 /** Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
@@ -35,6 +37,10 @@ process_execute (const char *file_name)
 
 
   tid_t tid;
+
+  //DEBUG
+  //printf("DEBUG: Entering process_execute, cmd: %s\n", file_name);
+
 
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
@@ -112,11 +118,56 @@ start_process (void *file_name_)
 
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
+
+// LAB 2 Implementation of process_wait
 int
-process_wait (tid_t child_tid UNUSED) 
+process_wait (tid_t child_tid)
 {
+  if (child_tid == TID_ERROR)
+    return -1;
+  /* yield to other threads until the child thread dies */
+  while (tid_is_alive (child_tid))
+    thread_yield (); 
+
   return -1;
 }
+
+// LAB 2 辅助函数
+struct find_tid_aux
+  {
+    tid_t target;
+    bool found;
+  };
+
+/* 在thread_foreach中被调用，检查是否存在tid为target且状态不为THREAD_DYING的线程 */
+static void
+find_tid_action (struct thread *t, void *aux)
+{
+  struct find_tid_aux *find = aux;
+  if (t->tid == find->target && t->status != THREAD_DYING)
+    find->found = true;
+}
+
+/* 检查tid是否存在且状态不为THREAD_DYING */
+static bool
+tid_is_alive (tid_t tid)
+{
+  struct find_tid_aux find;
+  enum intr_level old_level;
+
+  find.target = tid;
+  find.found = false;
+
+  old_level = intr_disable ();
+  thread_foreach (find_tid_action, &find);
+  intr_set_level (old_level);
+
+  return find.found;
+}
+// LAB 2 Implementation of process_wait end
+
+
+
 
 /** Free the current process's resources. */
 void
@@ -125,18 +176,21 @@ process_exit (void)
   struct thread *cur = thread_current ();
   uint32_t *pd;
 
-// 2.1 Process Termination Messagess
 #ifdef USERPROG
+  // LAB 2.1, 这部分挪到sys_exit里了
   /* 打印退出信息，仅针对用户进程，且不是halt */
-  /* 需要在struct thread中添加exit_status，假设已添加int exit_status; 并在syscall.c中设置 */
-  if (cur->pagedir != NULL && strcmp(cur->name, "main") != 0 && strcmp(cur->name, "idle") != 0) {
-    /* 打印进程名（不带参数） */
+  /* 已经在struct thread中添加exit_status */
+  /* 已经在syscall.c的sys_exit中实现print message*/
+
+/*   if (cur->pagedir != NULL && strcmp(cur->name, "main") != 0 && strcmp(cur->name, "idle") != 0) {
+    // 打印进程名（不带参数�?
     char proc_name[16];
     strlcpy(proc_name, cur->name, sizeof(proc_name));
     char *space = strchr(proc_name, ' ');
     if (space) *space = '\0';
     printf("%s: exit(%d)\n", proc_name, cur->exit_status);
-  }
+  } */
+    
 #endif
 
   /* Destroy the current process's page directory and switch back
@@ -630,3 +684,5 @@ install_page (void *upage, void *kpage, bool writable)
   return (pagedir_get_page (t->pagedir, upage) == NULL
           && pagedir_set_page (t->pagedir, upage, kpage, writable));
 }
+
+
