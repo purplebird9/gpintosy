@@ -116,7 +116,7 @@ struct thread
    /* Owned by thread.c. */
    unsigned magic;                     /**< Detects stack overflow. */
 
-//2.1
+// 2.1
 #ifdef USERPROG
    int exit_status;                    /**< Exit status for user process. */
 #endif

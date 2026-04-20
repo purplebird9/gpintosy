@@ -29,6 +29,11 @@ tid_t
 process_execute (const char *file_name) 
 {
   char *fn_copy;
+  char *fn_copy_for_name;
+  char *prog_name;
+  char *save_ptr;
+
+
   tid_t tid;
 
   /* Make a copy of FILE_NAME.
@@ -38,12 +43,34 @@ process_execute (const char *file_name)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
 
-  /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
+  // LAB2.2
+  /* Make another copy for name only, cuz "strtok_r" will change the string*/
+  fn_copy_for_name = palloc_get_page (0);
+  if (fn_copy_for_name == NULL)
+    {
+      palloc_free_page (fn_copy);
+      return TID_ERROR;
+    }
+  strlcpy (fn_copy_for_name, file_name, PGSIZE);
+  /* Extract the program name (the first token) from the command line. */
+  prog_name = strtok_r (fn_copy_for_name, " ", &save_ptr);
+  if (prog_name == NULL)
+    {
+      palloc_free_page (fn_copy);
+      palloc_free_page (fn_copy_for_name);
+      return TID_ERROR;
+    }
+  
+  // LAB 2.2: file_name -> prog_name
+  /* Create a new thread to execute PROG_NAME. */
+  tid = thread_create (prog_name, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy); 
+  palloc_free_page (fn_copy_for_name);
   return tid;
 }
+
+
 
 /** A thread function that loads a user process and starts it
    running. */
@@ -209,7 +236,7 @@ struct Elf32_Phdr
 #define PF_W 2          /**< Writable. */
 #define PF_R 4          /**< Readable. */
 
-static bool setup_stack (void **esp);
+static bool setup_stack (void **esp, const char *cmdline);
 static bool validate_segment (const struct Elf32_Phdr *, struct file *);
 static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
                           uint32_t read_bytes, uint32_t zero_bytes,
@@ -222,6 +249,12 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 bool
 load (const char *file_name, void (**eip) (void), void **esp) 
 {
+  // LAB 2.2
+  char *file_name_copy = NULL;
+  char *save_ptr;
+  char *prog_name;
+
+
   struct thread *t = thread_current ();
   struct Elf32_Ehdr ehdr;
   struct file *file = NULL;
@@ -235,11 +268,23 @@ load (const char *file_name, void (**eip) (void), void **esp)
     goto done;
   process_activate ();
 
+  // LAB 2.2: Extract the program name (the first token) from the command line.
+  file_name_copy = palloc_get_page(0);
+  if (file_name_copy == NULL)
+    goto done; //done: close file, return false
+  strlcpy(file_name_copy, file_name, PGSIZE);
+
+  prog_name = strtok_r(file_name_copy, " ", &save_ptr);
+  if (prog_name == NULL)
+  {
+    goto done;
+  }
   /* Open executable file. */
-  file = filesys_open (file_name);
+  file = filesys_open (prog_name);
+
   if (file == NULL) 
     {
-      printf ("load: %s: open failed\n", file_name);
+      printf ("load: %s: open failed\n", prog_name);
       goto done; 
     }
 
@@ -316,7 +361,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
     }
 
   /* Set up stack. */
-  if (!setup_stack (esp))
+  if (!setup_stack (esp, file_name))
     goto done;
 
   /* Start address. */
@@ -326,6 +371,9 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
  done:
   /* We arrive here whether the load is successful or not. */
+  // LAB 2.2: free the page allocated for file_name_copy
+  if (file_name_copy != NULL)
+    palloc_free_page (file_name_copy);
   file_close (file);
   return success;
 }
@@ -438,13 +486,23 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
   return true;
 }
 
+
+// LAB 2.2: set up the stack with command line arguments
 /** Create a minimal stack by mapping a zeroed page at the top of
    user virtual memory. */
 static bool
-setup_stack (void **esp) 
+setup_stack (void **esp, const char *cmdline) 
 {
+  #define MAX_ARGS 128
   uint8_t *kpage;
   bool success = false;
+  char *cmdline_copy = NULL;
+  char *argv[MAX_ARGS];
+  int argc = 0;
+  char *token;
+  char *save_ptr;
+  uint8_t *sp;
+  int i;
 
   kpage = palloc_get_page (PAL_USER | PAL_ZERO);
   if (kpage != NULL) 
@@ -455,6 +513,101 @@ setup_stack (void **esp)
       else
         palloc_free_page (kpage);
     }
+
+  // LAB 2.2
+  if (!success)
+    return false;
+
+  cmdline_copy = palloc_get_page (0);
+  if (cmdline_copy == NULL)
+    return false;
+  strlcpy (cmdline_copy, cmdline, PGSIZE);
+
+  for (token = strtok_r (cmdline_copy, " ", &save_ptr);
+       token != NULL;
+       token = strtok_r (NULL, " ", &save_ptr))
+    {
+      if (argc >= MAX_ARGS)
+        {
+          palloc_free_page (cmdline_copy);
+          return false;
+        }
+      argv[argc++] = token;
+    }
+
+  sp = *esp;
+
+  /* Push argument strings in reverse order. */
+  for (i = argc - 1; i >= 0; i--)
+    {
+      size_t len = strlen (argv[i]) + 1;
+      sp -= len;
+      if (sp < (uint8_t *) PHYS_BASE - PGSIZE)
+        {
+          palloc_free_page (cmdline_copy);
+          return false;
+        }
+      memcpy (sp, argv[i], len);
+      argv[i] = (char *) sp;
+    }
+
+  /* Word-align stack pointer to a multiple of 4. */
+  while ((uintptr_t) sp % 4 != 0)
+    *--sp = 0;
+
+  /* Push argv[argc] == NULL sentinel. */
+  sp -= sizeof (char *);
+  if (sp < (uint8_t *) PHYS_BASE - PGSIZE)
+    {
+      palloc_free_page (cmdline_copy);
+      return false;
+    }
+  *(char **) sp = NULL;
+
+  /* Push argv pointers in reverse order. */
+  for (i = argc - 1; i >= 0; i--)
+    {
+      sp -= sizeof (char *);
+      if (sp < (uint8_t *) PHYS_BASE - PGSIZE)
+        {
+          palloc_free_page (cmdline_copy);
+          return false;
+        }
+      *(char **) sp = argv[i];
+    }
+
+  /* Push argv (address of argv[0]), argc, and fake return address. */
+  {
+    char **argv_start = (char **) sp;
+
+    sp -= sizeof (char **);
+    if (sp < (uint8_t *) PHYS_BASE - PGSIZE)
+      {
+        palloc_free_page (cmdline_copy);
+        return false;
+      }
+    *(char ***) sp = argv_start;
+
+    sp -= sizeof (int);
+    if (sp < (uint8_t *) PHYS_BASE - PGSIZE)
+      {
+        palloc_free_page (cmdline_copy);
+        return false;
+      }
+    *(int *) sp = argc;
+
+    sp -= sizeof (void *);
+    if (sp < (uint8_t *) PHYS_BASE - PGSIZE)
+      {
+        palloc_free_page (cmdline_copy);
+        return false;
+      }
+    *(void **) sp = NULL;
+  }
+
+  *esp = sp;
+  palloc_free_page (cmdline_copy);
+  #undef MAX_ARGS
   return success;
 }
 
