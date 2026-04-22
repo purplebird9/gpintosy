@@ -351,16 +351,14 @@ process_exit (void)
   // LAB 2.1, 这部分挪到sys_exit里了
   /* 打印退出信息，仅针对用户进程，且不是halt */
   /* 已经在struct thread中添加exit_status */
-  /* 已经在syscall.c的sys_exit中实现print message*/
-
-/*   if (cur->pagedir != NULL && strcmp(cur->name, "main") != 0 && strcmp(cur->name, "idle") != 0) {
-    // 打印进程名（不带参数�?
+ // LAB 2 DEBUG: 把打印退出信息挪回process_exit()
+  if (cur->pagedir != NULL && strcmp(cur->name, "main") != 0 && strcmp(cur->name, "idle") != 0) {
     char proc_name[16];
     strlcpy(proc_name, cur->name, sizeof(proc_name));
     char *space = strchr(proc_name, ' ');
     if (space) *space = '\0';
     printf("%s: exit(%d)\n", proc_name, cur->exit_status);
-  } */
+  } 
     
 #endif
 

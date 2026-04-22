@@ -347,3 +347,18 @@ DEBUG方向:
 - 补全 read 逻辑：lg-random 依赖 read 的正确性。如果你还没写文件 read，这个测试是不可能通过的。
 - 检查 printf 的来源：在 Pintos 中，所有的 (test-name) ... 输出都是通过 lib/user/syscall.c 里的 printf 打印的，它最终会调用你的 write(fd 1, ...)。
 - 打印调试：在你的 syscall_write 入口处打印 fd 和 size，看看在出问题的那一刻，是不是收到了异常的请求。
+
+
+design:
+- 把打印退出信息从sys_exit挪到process_exit
+    - 现在exit不会输出紊乱了
+
+result:
+4 of 80 failed.
+问题:
+1. read_fault.png, 稳定的小bug
+2. 仍然有write to console紊乱. 不确定能否稳定复现 (piazza上也有人有"偶发（不固定测试点）的输出紊乱现象")
+    - 已确定是偶发
+\* no-vm/multi-oom 很慢
+
+

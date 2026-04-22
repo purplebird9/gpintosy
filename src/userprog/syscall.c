@@ -68,7 +68,10 @@ sys_exit (int status)
   struct thread *cur = thread_current ();
 
   cur->exit_status = status;
-  printf ("%s: exit(%d)\n", cur->name, status);
+  // LAB 2 DEBUG:
+  // 在process_exit()里打印退出状态
+  // 因为如果程序被内核杀死，它不会走 sys_exit，但它一定会走 process_exit
+  // printf ("%s: exit(%d)\n", cur->name, status);
   thread_exit ();
 }
 
