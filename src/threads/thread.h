@@ -6,6 +6,7 @@
 #include <stdint.h>
 
 struct file;
+struct child_process_status;
 
 /** States in a thread's life cycle. */
 enum thread_status
@@ -116,6 +117,8 @@ struct thread
     struct list fd_list;                /**< Open file descriptors. */
     int next_fd;                        /**< Next allocatable file descriptor. */
     struct file *exec_file;             /**< Running executable, kept open. */
+    struct list child_processes;        /**< LAB 2.4: Child process status list. */
+    struct child_process_status *child_info; /**< LAB 2.4: Shared status with parent. */
 #endif
 
    /* Owned by thread.c. */

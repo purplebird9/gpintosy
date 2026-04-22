@@ -239,8 +239,111 @@ FAIL tests/filesys/base/syn-write
 
 
 ### 0422
-TODO:
-文件描述符表 + 基础文件系统调用 (create, open, read, write, close)：这能让你通过很多基础测试。记得加全局锁。
-exec 的同步机制：确保父进程能拿到子进程的 pid。
-wait 的完整逻辑：这是最折磨人的部分，建议画一画父子进程同步的状态图。
-file_deny_write：最后加这个，比较简单。
+checklist:
+- 文件描述符表 + 基础文件系统调用 (create, open, read, write, close)：这能让你通过很多基础测试。记得加全局锁。(done)
+- exec 的同步机制：确保父进程能拿到子进程的 pid。
+- wait 的完整逻辑：这是最折磨人的部分，建议画一画父子进程同步的状态图。
+- file_deny_write：最后加这个，比较简单。
+
+
+
+codex神力:
+- create/remove/open/filesize/read/write/seek/tell/close 的完整分发与实现
+- 用户指针、用户缓冲区、用户字符串的校验与安全拷贝，非法地址会 exit(-1)
+- 每进程独立 fd 表，fd 从 2 开始分配，退出时自动关闭全部打开文件
+- 全局 filesys_lock，把文件系统访问串行化
+- 运行中可执行文件的 deny_write / 退出时 allow_write，避免被改写
+- 另外我顺手把异常杀进程路径改成统一走 sys_exit(-1) 了，在 exception.c 
+
+modified:
+**LAB 2.4**
+- syscall.c (refactor)
+- syscall.h
+- process.c
+    - `process_exit()`
+    - `bool load()`
+- thread.c (fd_list each process)
+- thread.h 
+- exception.c (exception: `kill()`)
+
+reult:12 failed
+```markdown
+FAIL tests/userprog/read-normal
+FAIL tests/userprog/read-boundary
+FAIL tests/userprog/exec-missing
+FAIL tests/userprog/wait-simple
+FAIL tests/userprog/wait-twice
+FAIL tests/userprog/multi-recurse
+FAIL tests/userprog/multi-child-fd
+FAIL tests/userprog/rox-child
+FAIL tests/userprog/rox-multichild
+FAIL tests/userprog/no-vm/multi-oom
+FAIL tests/filesys/base/syn-read
+FAIL tests/filesys/base/syn-write
+```
+
+
+#### TASK: Synchronization in syscall exec/wait
+
+**Requirements**
+exec: 
+- "the parent process cannot return from the exec until it knows whether the child process successfully loaded its executable. You must use appropriate synchronization to ensure this."
+
+wait:
+- malloc()创建父子进程共享的数据结构, 保存child的execution information
+    - pid, exit_status, sema阻塞父进程直到子进程退出, has_called_wait, is_exit, ref_count有没有进程还在用这个结构
+- direct child
+    - 父进程struct thread中添加child_list
+    - 初始化必须在 thread_create 之后、process_execute 返回前完成，或者在子进程启动函数中处理好同步，防止子进程跑得太快在父进程还没登记完就退出了。
+- Semaphore 父子进程的同步
+    - down() - 子进程退出并写入exit_status - up()
+-  whichever process that dies last isresponsible for freeing the information
+    - 实现: ref_count
+- Cases to return -1:
+    - not direct child
+    - wait过再wait
+    - child被kernel杀死
+
+codex神力
+modified:
+- process.c
+    process_execute() 现在会先创建共享状态，再创建子线程，并在返回前通过 load_sema 等到子进程明确汇报“加载成功/失败”
+    start_process() 会把这块共享状态挂到子线程上，load() 结束后立刻唤醒父进程，所以 exec 失败时现在会返回 -1
+    process_wait() 现在只允许等待直接子进程一次；它会找到对应子项、阻塞到子进程退出、取回退出码，再做引用释放
+    process_exit() 现在会把退出码写回共享状态、唤醒等待者；如果父进程先退出，也会把还没 wait 的孩子全部“脱钩”，让最后存活的一方负责释放这块状态.
+
+- thread.c, thread,h
+    给每个进程补了 child_processes 和 child_info，用于维护子进程列表和当前进程对应的共享状态。
+
+result:
+exec, wait 成功实现, 但是比较上一版出现了新fail.同时有遗留fail
+9 of 80 failed
+```markdown
+FAIL tests/userprog/args-multiple ???
+FAIL tests/userprog/create-null ???
+FAIL tests/userprog/read-normal
+FAIL tests/userprog/read-boundary
+FAIL tests/userprog/multi-child-fd
+FAIL tests/userprog/no-vm/multi-oom
+FAIL tests/filesys/base/lg-random
+FAIL tests/filesys/base/lg-seq-block
+FAIL tests/filesys/base/sm-random
+```
+
+观察到好几个fail原因是输出格式轻微错乱
+e.g.
+```diff
+Differences in `diff -u' format:
+  (sm-random) begin
+  (sm-random) create "bazzle"
+  (sm-random) open "bazzle"
+  (sm-random) write "bazzle" in random order
+- (sm-random) read "bazzle" in random order
++ ((sm-random) read "bazzle" in random order
+  (sm-random) close "bazzle"
+  (sm-random) end
+```
+DEBUG方向:
+- 补全 read 逻辑：lg-random 依赖 read 的正确性。如果你还没写文件 read，这个测试是不可能通过的。
+- 检查 printf 的来源：在 Pintos 中，所有的 (test-name) ... 输出都是通过 lib/user/syscall.c 里的 printf 打印的，它最终会调用你的 write(fd 1, ...)。
+- 打印调试：在你的 syscall_write 入口处打印 fd 和 size，看看在出问题的那一刻，是不是收到了异常的请求。

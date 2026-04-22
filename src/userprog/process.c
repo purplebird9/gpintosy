@@ -16,13 +16,42 @@
 #include "threads/init.h"
 #include "threads/interrupt.h"
 #include "threads/palloc.h"
+#include "threads/malloc.h"
+#include "threads/synch.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
-static bool tid_is_alive (tid_t tid);
+static bool tid_is_alive (tid_t tid) UNUSED;
 static void find_tid_action (struct thread *t, void *aux);
+
+/* LAB 2.4 Start */
+/* Shared execution status between parent and child. */
+struct child_process_status
+  {
+    tid_t tid;                         /**< Child tid. */
+    int exit_status;                   /**< Child exit status. */
+    bool load_success;                 /**< Whether child loaded successfully. */
+    bool exited;                       /**< Whether child has exited. */
+    int ref_cnt;                       /**< Reference count shared by parent and child. */
+    struct semaphore load_sema;        /**< Parent waits for exec load result. */
+    struct semaphore exit_sema;        /**< Parent waits for child exit. */
+    struct list_elem elem;             /**< Element in parent's child list. */
+  };
+
+/* Startup bundle passed to the child thread.*/
+struct process_start_info
+  {
+    char *file_name;                           /**< Command line page copy. */
+    struct child_process_status *child_info;   /**< Shared parent-child status. */
+  };
+
+/* Helpers for child status management. */
+static struct child_process_status *find_child_process (tid_t child_tid);
+static void release_child_process (struct child_process_status *child);
+
+/** LAB 2.4 End */
 
 /** Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
@@ -35,6 +64,10 @@ process_execute (const char *file_name)
   char *fn_copy_for_name;
   char *prog_name;
   char *save_ptr;
+
+  struct process_start_info *start_info;
+  struct child_process_status *child_info;
+  struct thread *cur = thread_current ();
 
 
   tid_t tid;
@@ -50,11 +83,42 @@ process_execute (const char *file_name)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
 
+  // LAB 2.4
+  /* Allocate parent-child shared status and child start bundle on HEAP */
+  child_info = malloc (sizeof *child_info);
+  if (child_info == NULL)
+    {
+      palloc_free_page (fn_copy);
+      return TID_ERROR;
+    }
+  child_info->tid = TID_ERROR;
+  child_info->exit_status = -1;
+  child_info->load_success = false;
+  child_info->exited = false;
+  child_info->ref_cnt = 2;
+  sema_init (&child_info->load_sema, 0);
+  sema_init (&child_info->exit_sema, 0);
+  list_push_back (&cur->child_processes, &child_info->elem);
+
+  start_info = malloc (sizeof *start_info);
+  if (start_info == NULL)
+    {
+      list_remove (&child_info->elem);
+      free (child_info);
+      palloc_free_page (fn_copy);
+      return TID_ERROR;
+    }
+  start_info->file_name = fn_copy;
+  start_info->child_info = child_info;
+
   // LAB2.2
   /* Make another copy for name only, cuz "strtok_r" will change the string*/
   fn_copy_for_name = palloc_get_page (0);
   if (fn_copy_for_name == NULL)
     {
+      free (start_info);
+      list_remove (&child_info->elem);
+      free (child_info);
       palloc_free_page (fn_copy);
       return TID_ERROR;
     }
@@ -63,6 +127,9 @@ process_execute (const char *file_name)
   prog_name = strtok_r (fn_copy_for_name, " ", &save_ptr);
   if (prog_name == NULL)
     {
+      free (start_info);
+      list_remove (&child_info->elem);
+      free (child_info);
       palloc_free_page (fn_copy);
       palloc_free_page (fn_copy_for_name);
       return TID_ERROR;
@@ -70,9 +137,26 @@ process_execute (const char *file_name)
   
   // LAB 2.2: file_name -> prog_name
   /* Create a new thread to execute PROG_NAME. */
-  tid = thread_create (prog_name, PRI_DEFAULT, start_process, fn_copy);
+  tid = thread_create (prog_name, PRI_DEFAULT, start_process, start_info);
   if (tid == TID_ERROR)
-    palloc_free_page (fn_copy); 
+    {
+      free (start_info);
+      list_remove (&child_info->elem);
+      free (child_info);
+      palloc_free_page (fn_copy);
+    }
+  else
+    {
+      // LAB 2.4: Parent waits until child reports load success or failure.
+      child_info->tid = tid;
+      sema_down (&child_info->load_sema);
+      if (!child_info->load_success)
+        {
+          list_remove (&child_info->elem);
+          release_child_process (child_info);
+          tid = TID_ERROR;
+        }
+    }
   palloc_free_page (fn_copy_for_name);
   return tid;
 }
@@ -84,9 +168,16 @@ process_execute (const char *file_name)
 static void
 start_process (void *file_name_)
 {
-  char *file_name = file_name_;
+  struct process_start_info *start_info = file_name_;
+  char *file_name = start_info->file_name;
+  struct child_process_status *child_info = start_info->child_info;
   struct intr_frame if_;
+  struct thread *cur = thread_current ();
   bool success;
+
+  // LAB 2.4: Attach shared child status to the child thread before loading.
+  cur->child_info = child_info;
+  free (start_info);
 
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
@@ -94,6 +185,10 @@ start_process (void *file_name_)
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
   success = load (file_name, &if_.eip, &if_.esp);
+
+  // LAB 2.4: Wake parent once the child knows whether load succeeded.
+  child_info->load_success = success;
+  sema_up (&child_info->load_sema);
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
@@ -120,17 +215,35 @@ start_process (void *file_name_)
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
 
-// LAB 2 Implementation of process_wait
+
+/** LAB 2 Implementation of process_wait.
+ * syscall wait() is based on this function, and implemented in syscall.c.
+ */
+// LAB 2.2: this implementation is temporary just to let it run
 int
 process_wait (tid_t child_tid)
 {
+  struct child_process_status *child;
+  int exit_status;
+
+  /* 1. if invalid TID, return -1 */
   if (child_tid == TID_ERROR)
     return -1;
-  /* yield to other threads until the child thread dies */
-  while (tid_is_alive (child_tid))
-    thread_yield (); 
 
-  return -1;
+  // LAB 2.4: Only direct children can be waited on, and at most once.
+  child = find_child_process (child_tid);
+  if (child == NULL)
+    return -1;
+
+  list_remove (&child->elem);
+
+  // LAB 2.4: Wait until the child actually exits, if needed.
+  if (!child->exited)
+    sema_down (&child->exit_sema);
+
+  exit_status = child->exit_status;
+  release_child_process (child);
+  return exit_status;
 }
 
 // LAB 2 辅助函数
@@ -165,7 +278,35 @@ tid_is_alive (tid_t tid)
 
   return find.found;
 }
-// LAB 2 Implementation of process_wait end
+
+// LAB 2.4: Find a direct child process status by tid.
+static struct child_process_status *
+find_child_process (tid_t child_tid)
+{
+  struct thread *cur = thread_current ();
+  struct list_elem *e;
+
+  for (e = list_begin (&cur->child_processes);
+       e != list_end (&cur->child_processes);
+       e = list_next (e))
+    {
+      struct child_process_status *child =
+        list_entry (e, struct child_process_status, elem);
+      if (child->tid == child_tid)
+        return child;
+    }
+  return NULL;
+}
+
+// LAB 2.4: Shared child status is freed by whichever side exits last.
+static void
+release_child_process (struct child_process_status *child)
+{
+  child->ref_cnt--;
+  if (child->ref_cnt == 0)
+    free (child);
+}
+/* LAB 2: Implementation of process_wait ends. */
 
 
 
@@ -176,6 +317,7 @@ process_exit (void)
 {
   struct thread *cur = thread_current ();
   uint32_t *pd;
+  struct list_elem *e;
 
 // LAB 2.4: 退出时关闭所有打开文件
   lock_acquire (&filesys_lock);
@@ -187,6 +329,23 @@ process_exit (void)
       cur->exec_file = NULL;
     }
   lock_release (&filesys_lock);
+
+  // LAB 2.4: Publish exit status to parent and wake any waiter.
+  if (cur->child_info != NULL)
+    {
+      cur->child_info->exit_status = cur->exit_status;
+      cur->child_info->exited = true;
+      sema_up (&cur->child_info->exit_sema);
+      release_child_process (cur->child_info);
+      cur->child_info = NULL;
+    }
+
+  // LAB 2.4: If parent exits first, detach all remaining children.
+  while (!list_empty (&cur->child_processes))
+    {
+      e = list_pop_front (&cur->child_processes);
+      release_child_process (list_entry (e, struct child_process_status, elem));
+    }
 
 #ifdef USERPROG
   // LAB 2.1, 这部分挪到sys_exit里了

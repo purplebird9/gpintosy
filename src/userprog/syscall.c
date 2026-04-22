@@ -543,6 +543,11 @@ sys_close (int fd)
   lock_release (&filesys_lock);
 }
 
+/** 
+ * exec:
+ * Runs the executable whose name is given in cmd_line, passing any given arguments, 
+ * and returns the new process's program id (pid).
+ */
 static tid_t
 sys_exec (const char *cmd_line)
 {
@@ -553,6 +558,12 @@ sys_exec (const char *cmd_line)
   return tid;
 }
 
+
+/**
+ * wait:
+ * Waits for a child process pid and retrieves the child's exit status.\
+ * implemented IN TERMS OF process_wait in process.c.
+ */
 static int
 sys_wait (tid_t pid)
 {

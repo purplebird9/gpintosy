@@ -710,6 +710,9 @@ init_thread (struct thread *t, const char *name, int priority)
   list_init (&t->fd_list);
   t->next_fd = 2;
   t->exec_file = NULL;
+  /* 每个进程的child list以及对应的共享状态 */
+  list_init (&t->child_processes);
+  t->child_info = NULL;
   t->exit_status = -1;
 #endif
 
