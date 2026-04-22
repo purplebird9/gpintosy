@@ -5,6 +5,8 @@
 #include <list.h>
 #include <stdint.h>
 
+struct file;
+
 /** States in a thread's life cycle. */
 enum thread_status
   {
@@ -107,10 +109,13 @@ struct thread
     int recent_cpu;                     /**< Recent CPU usage. */
 
   
-
+// LAB 2.4
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /**< Page directory. */
+    struct list fd_list;                /**< Open file descriptors. */
+    int next_fd;                        /**< Next allocatable file descriptor. */
+    struct file *exec_file;             /**< Running executable, kept open. */
 #endif
 
    /* Owned by thread.c. */

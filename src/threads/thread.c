@@ -13,6 +13,7 @@
 #include "threads/vaddr.h"
 #ifdef USERPROG
 #include "userprog/process.h"
+#include "filesys/file.h"
 #endif
 
 /* 1.3 */
@@ -702,6 +703,15 @@ init_thread (struct thread *t, const char *name, int priority)
   /* 1.3: init new properties*/
   t->nice = 0;
   t->recent_cpu = 0;
+
+// LAB 2.4
+#ifdef USERPROG
+  t->pagedir = NULL;
+  list_init (&t->fd_list);
+  t->next_fd = 2;
+  t->exec_file = NULL;
+  t->exit_status = -1;
+#endif
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);

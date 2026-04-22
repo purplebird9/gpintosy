@@ -147,11 +147,15 @@ FAIL tests/filesys/base/syn-write
 
 
 ### 0421
+
 actually 0422
+
 - codex added accessing user memory
+
  passed 30 of 80
- ```
- pass tests/userprog/args-none
+
+```markdown
+pass tests/userprog/args-none
 pass tests/userprog/args-single
 pass tests/userprog/args-multiple
 pass tests/userprog/args-many
@@ -232,3 +236,11 @@ FAIL tests/filesys/base/syn-read
 FAIL tests/filesys/base/syn-remove
 FAIL tests/filesys/base/syn-write
  ```
+
+
+### 0422
+TODO:
+文件描述符表 + 基础文件系统调用 (create, open, read, write, close)：这能让你通过很多基础测试。记得加全局锁。
+exec 的同步机制：确保父进程能拿到子进程的 pid。
+wait 的完整逻辑：这是最折磨人的部分，建议画一画父子进程同步的状态图。
+file_deny_write：最后加这个，比较简单。

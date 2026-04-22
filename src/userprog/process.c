@@ -7,6 +7,7 @@
 #include <string.h>
 #include "userprog/gdt.h"
 #include "userprog/pagedir.h"
+#include "userprog/syscall.h"
 #include "userprog/tss.h"
 #include "filesys/directory.h"
 #include "filesys/file.h"
@@ -176,6 +177,17 @@ process_exit (void)
   struct thread *cur = thread_current ();
   uint32_t *pd;
 
+// LAB 2.4: 退出时关闭所有打开文件
+  lock_acquire (&filesys_lock);
+  syscall_close_all_files ();
+  if (cur->exec_file != NULL)
+    {
+      file_allow_write (cur->exec_file);
+      file_close (cur->exec_file);
+      cur->exec_file = NULL;
+    }
+  lock_release (&filesys_lock);
+
 #ifdef USERPROG
   // LAB 2.1, 这部分挪到sys_exit里了
   /* 打印退出信息，仅针对用户进程，且不是halt */
@@ -314,6 +326,8 @@ load (const char *file_name, void (**eip) (void), void **esp)
   struct file *file = NULL;
   off_t file_ofs;
   bool success = false;
+  // LAB 2.4: 全局 filesys_lock
+  bool fs_locked = false;
   int i;
 
   /* Allocate and activate page directory. */
@@ -333,6 +347,10 @@ load (const char *file_name, void (**eip) (void), void **esp)
   {
     goto done;
   }
+
+  // LAB 2.4: 全局 filesys_lock，把文件系统访问串行化
+  lock_acquire (&filesys_lock);
+  fs_locked = true;
   /* Open executable file. */
   file = filesys_open (prog_name);
 
@@ -341,6 +359,10 @@ load (const char *file_name, void (**eip) (void), void **esp)
       printf ("load: %s: open failed\n", prog_name);
       goto done; 
     }
+
+  // LAB 2.5:运行中可执行文件的 deny_write / 退出时 allow_write，避免被改写
+  file_deny_write (file);
+  t->exec_file = file;
 
   /* Read and verify executable header. */
   if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
@@ -424,11 +446,18 @@ load (const char *file_name, void (**eip) (void), void **esp)
   success = true;
 
  done:
+ // lab 2.4
+  if (fs_locked)
+    lock_release (&filesys_lock);
   /* We arrive here whether the load is successful or not. */
   // LAB 2.2: free the page allocated for file_name_copy
   if (file_name_copy != NULL)
     palloc_free_page (file_name_copy);
-  file_close (file);
+  if (!success && file != NULL)
+    {
+      file_close (file);
+      t->exec_file = NULL;
+    }
   return success;
 }
 
