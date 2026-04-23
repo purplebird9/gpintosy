@@ -51,7 +51,10 @@ struct process_start_info
 static struct child_process_status *find_child_process (tid_t child_tid);
 static void release_child_process (struct child_process_status *child);
 
-/** LAB 2.4 End */
+/* LAB 2.4 End */
+
+
+
 
 /** Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
@@ -220,24 +223,25 @@ start_process (void *file_name_)
  * syscall wait() is based on this function, and implemented in syscall.c.
  */
 // LAB 2.2: this implementation is temporary just to let it run
+// Now it is complete.
 int
 process_wait (tid_t child_tid)
 {
   struct child_process_status *child;
   int exit_status;
 
-  /* 1. if invalid TID, return -1 */
+  /* if invalid TID, return -1 */
   if (child_tid == TID_ERROR)
     return -1;
 
-  // LAB 2.4: Only direct children can be waited on, and at most once.
+  /* Only direct children can be waited on, and at most once.*/
   child = find_child_process (child_tid);
   if (child == NULL)
     return -1;
 
   list_remove (&child->elem);
 
-  // LAB 2.4: Wait until the child actually exits, if needed.
+  /* Wait until the child actually exits, if needed. */
   if (!child->exited)
     sema_down (&child->exit_sema);
 
@@ -246,7 +250,9 @@ process_wait (tid_t child_tid)
   return exit_status;
 }
 
-// LAB 2 辅助函数
+/*  LAB 2 辅助函数 */
+
+
 struct find_tid_aux
   {
     tid_t target;
@@ -279,7 +285,7 @@ tid_is_alive (tid_t tid)
   return find.found;
 }
 
-// LAB 2.4: Find a direct child process status by tid.
+/* LAB 2.4: Find a direct child process status by tid. */
 static struct child_process_status *
 find_child_process (tid_t child_tid)
 {
@@ -298,7 +304,7 @@ find_child_process (tid_t child_tid)
   return NULL;
 }
 
-// LAB 2.4: Shared child status is freed by whichever side exits last.
+/* LAB 2.4: Shared child status is freed by whichever side exits last. */
 static void
 release_child_process (struct child_process_status *child)
 {
@@ -306,6 +312,7 @@ release_child_process (struct child_process_status *child)
   if (child->ref_cnt == 0)
     free (child);
 }
+
 /* LAB 2: Implementation of process_wait ends. */
 
 
@@ -348,9 +355,7 @@ process_exit (void)
     }
 
 #ifdef USERPROG
-  // LAB 2.1, 这部分挪到sys_exit里了
   /* 打印退出信息，仅针对用户进程，且不是halt */
-  /* 已经在struct thread中添加exit_status */
  // LAB 2 DEBUG: 把打印退出信息挪回process_exit()
   if (cur->pagedir != NULL && strcmp(cur->name, "main") != 0 && strcmp(cur->name, "idle") != 0) {
     char proc_name[16];

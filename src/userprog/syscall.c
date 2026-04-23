@@ -29,7 +29,7 @@ struct file_descriptor
     struct list_elem elem;
   };
 
-
+/* prototypes */
 static void syscall_handler (struct intr_frame *);
 static void check_user_vaddr (const void *uaddr);
 static void check_user_buffer (const void *buffer, size_t size);
@@ -62,6 +62,8 @@ syscall_init (void)
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 }
 
+
+/* SYS_EXIT：设置退出状态并终结当前线程 */
 void
 sys_exit (int status)
 {
@@ -75,6 +77,7 @@ sys_exit (int status)
   thread_exit ();
 }
 
+/* close all open files of a process */
 void
 syscall_close_all_files (void)
 {
@@ -89,6 +92,8 @@ syscall_close_all_files (void)
     }
 }
 
+
+/* 检查用户虚拟地址：验证地址是否合法且已映射，不合法则退出进程 */
 static void
 check_user_vaddr (const void *uaddr)
 {
@@ -97,6 +102,7 @@ check_user_vaddr (const void *uaddr)
     sys_exit (-1);
 }
 
+/* 检查用户缓冲区：遍历整个缓冲区范围以确保每一页都是合法的用户地址 */
 static void
 check_user_buffer (const void *buffer, size_t size)
 {
@@ -113,6 +119,7 @@ check_user_buffer (const void *buffer, size_t size)
     check_user_vaddr (uaddr + i);
 }
 
+/* 安全地从用户态拷贝数据到内核态：逐字节检查地址合法性并读取 */
 static void
 copy_in (void *dst_, const void *usrc_, size_t size)
 {
@@ -132,6 +139,7 @@ copy_in (void *dst_, const void *usrc_, size_t size)
     }
 }
 
+/* 安全地从内核态拷贝数据到用户态：逐字节检查并写入 */
 static void
 copy_out (void *udst_, const void *src_, size_t size)
 {
@@ -147,6 +155,7 @@ copy_out (void *udst_, const void *src_, size_t size)
     }
 }
 
+/* 从用户态拷贝字符串到内核态：动态分配内存并处理 null 终止符 */
 static char *
 copy_in_string (const char *us)
 {
@@ -180,6 +189,7 @@ copy_in_string (const char *us)
   return ks;
 }
 
+/* 从用户地址读取一个 32 位无符号整数 */
 static uint32_t
 read_u32 (const uint32_t *uaddr)
 {
@@ -188,6 +198,8 @@ read_u32 (const uint32_t *uaddr)
   return value;
 }
 
+
+/* SYSCALL_HANDLER ENTRANCE */
 static void
 syscall_handler (struct intr_frame *f)
 {
@@ -264,6 +276,7 @@ syscall_handler (struct intr_frame *f)
 
 
 // LAB 2.4
+/* 根据文件描述符数值查找当前线程的 file_descriptor 结构体 */
 static struct file_descriptor *
 lookup_fd (int fd)
 {
@@ -281,6 +294,8 @@ lookup_fd (int fd)
   return NULL;
 }
 
+
+/* 辅助函数：通过 FD 获取对应的内核 file 结构体指针 */
 static struct file *
 lookup_file (int fd)
 {
@@ -288,6 +303,7 @@ lookup_file (int fd)
   return desc != NULL ? desc->file : NULL;
 }
 
+/* 为新打开的文件分配一个文件描述符并加入进程的文件列表 */
 static int
 fd_allocate (struct file *file)
 {
@@ -303,6 +319,7 @@ fd_allocate (struct file *file)
   return desc->fd;
 }
 
+/* 通过文件描述符关闭文件并释放相关的描述符结构体内存 */
 static void
 fd_close (int fd)
 {
@@ -324,6 +341,7 @@ fd_close (int fd)
  * They also handle copying strings and buffers between user and kernel space, and manage file descriptors.
  */
 
+/* SYS_CREATE:创建新文件 */
 static bool
 sys_create (const char *file, unsigned initial_size)
 {
@@ -338,6 +356,8 @@ sys_create (const char *file, unsigned initial_size)
   return ok;
 }
 
+
+/* SYS_REMOVE:删除文件 */
 static bool
 sys_remove (const char *file)
 {
@@ -376,6 +396,7 @@ sys_open (const char *file)
   return fd;
 }
 
+/* SYS_FILESIZE:返回文件大小 */
 static int
 sys_filesize (int fd)
 {
@@ -391,6 +412,9 @@ sys_filesize (int fd)
   return length;
 }
 
+
+
+/* SYS_READ:处理键盘输入 (fd=0) 或普通文件读取 */
 static int
 sys_read (int fd, void *buffer, unsigned size)
 {
@@ -446,6 +470,8 @@ sys_read (int fd, void *buffer, unsigned size)
   return (int) bytes_read;
 }
 
+
+/* SYS_WRITE: 处理控制台输出 (fd=1) 或普通文件写入 */
 static int
 sys_write (int fd, const void *buffer, unsigned size)
 {
@@ -460,7 +486,9 @@ sys_write (int fd, const void *buffer, unsigned size)
 
   if (fd == 1)
     {
-      //DEBUG: 解决write to console时的偶发紊乱
+      //DEBUG:
+      // write all of buffer in one call to putbuf()
+      //解决write to console时的偶发紊乱
       uint8_t *kbuffer = malloc (size);
 
       if (kbuffer == NULL)
@@ -505,6 +533,8 @@ sys_write (int fd, const void *buffer, unsigned size)
   return (int) bytes_written;
 }
 
+
+/* SYS_SEEK:实现重定位文件指针 */
 static void
 sys_seek (int fd, unsigned position)
 {
@@ -518,6 +548,7 @@ sys_seek (int fd, unsigned position)
   lock_release (&filesys_lock);
 }
 
+/* SYS_TELL:实现获取当前文件指针位置 */
 static unsigned
 sys_tell (int fd)
 {
@@ -533,6 +564,8 @@ sys_tell (int fd)
   return position;
 }
 
+
+/* SYS_CLOSE:实现关闭文件描述符并释放资源 */
 static void
 sys_close (int fd)
 {
@@ -545,7 +578,7 @@ sys_close (int fd)
 }
 
 /** 
- * exec:
+ * SYS_EXEC:
  * Runs the executable whose name is given in cmd_line, passing any given arguments, 
  * and returns the new process's program id (pid).
  */
@@ -561,7 +594,7 @@ sys_exec (const char *cmd_line)
 
 
 /**
- * wait:
+ * SYS_WAIT:
  * Waits for a child process pid and retrieves the child's exit status.\
  * implemented IN TERMS OF process_wait in process.c.
  */
