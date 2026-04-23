@@ -460,18 +460,16 @@ sys_write (int fd, const void *buffer, unsigned size)
 
   if (fd == 1)
     {
-      while (bytes_written < size)
-        {
-          unsigned chunk = size - bytes_written;
+      //DEBUG: 解决write to console时的偶发紊乱
+      uint8_t *kbuffer = malloc (size);
 
-          if (chunk > sizeof bounce)
-            chunk = sizeof bounce;
+      if (kbuffer == NULL)
+        return -1;
 
-          copy_in (bounce, ubuffer + bytes_written, chunk);
-          putbuf ((char *) bounce, chunk);
-          bytes_written += chunk;
-        }
-      return (int) bytes_written;
+      copy_in (kbuffer, ubuffer, size);
+      putbuf ((char *) kbuffer, size);
+      free (kbuffer);
+      return (int) size;
     }
 
   if (fd == 0)

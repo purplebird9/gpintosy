@@ -352,13 +352,35 @@ DEBUG方向:
 design:
 - 把打印退出信息从sys_exit挪到process_exit
     - 现在exit不会输出紊乱了
+    - design: 想想是为什么!时机问题.
 
 result:
 4 of 80 failed.
 问题:
 1. read_fault.png, 稳定的小bug
+    - 居然是windows(\r\n)和linux(\n)不同环境下的换行符问题!
+    - 运行dos2unix tests/userprog/sample.txt, 全部解决
+
 2. 仍然有write to console紊乱. 不确定能否稳定复现 (piazza上也有人有"偶发（不固定测试点）的输出紊乱现象")
     - 已确定是偶发
-\* no-vm/multi-oom 很慢
 
+DEBUG:问题出在sys_write的`fd=1`路径. 
+- 原来: 在user buffer里切块, 多次putbuf()
+- 现在: 把整个user buf 拷贝进 kernel buf, 再一次性putbuf()
+really relavant??
+
+result:没有解决.
+```diff
+Acceptable output:
+  (create-long) begin
+  (create-long) create("x..."): 0
+  (create-long) end
+  create-long: exit(0)
+Differences in `diff -u' format:
+- (create-long) begin
++ ((create-long) begin
+  (create-long) create("x..."): 0
+  (create-long) end
+  create-long: exit(0)
+```
 
