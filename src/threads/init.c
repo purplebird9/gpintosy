@@ -31,6 +31,10 @@
 #else
 #include "tests/threads/tests.h"
 #endif
+// LAB3A
+#ifdef VM
+#include "vm/frame.h"
+#endif
 #ifdef FILESYS
 #include "devices/block.h" //devices/input.c
 #include "devices/ide.h"
@@ -99,6 +103,10 @@ pintos_init (void)
   /* Initialize memory system. */
   palloc_init (user_page_limit);
   malloc_init ();
+// LAB3A
+#ifdef VM
+  frame_table_init ();
+#endif
   paging_init ();
 
   /* Segmentation. */
