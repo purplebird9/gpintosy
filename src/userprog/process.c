@@ -20,11 +20,22 @@
 #include "threads/synch.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+// LAB3A
+#ifdef VM
+#include "vm/frame.h"
+#endif
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 static bool tid_is_alive (tid_t tid) UNUSED;
 static void find_tid_action (struct thread *t, void *aux);
+
+/* LAB3A funcs start */
+
+static void *process_alloc_user_page (enum palloc_flags flags, void *upage);
+static void process_free_user_page (void *kpage);
+
+/* LAB3A funcs end */
 
 /* LAB 2.4 Start */
 /* Shared execution status between parent and child. */
@@ -703,15 +714,17 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
-      /* Get a page of memory. */
-      uint8_t *kpage = palloc_get_page (PAL_USER);
+      /* Get a user frame.  
+        In VM builds this records the frame in the
+         global frame table; without VM it falls back to the old allocator. */
+      uint8_t *kpage = process_alloc_user_page (PAL_USER, upage); // LAB3A new allocator
       if (kpage == NULL)
         return false;
 
       /* Load this page. */
       if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
         {
-          palloc_free_page (kpage);
+          process_free_user_page (kpage);// LAB3A new deallocator
           return false; 
         }
       memset (kpage + page_read_bytes, 0, page_zero_bytes);
@@ -719,7 +732,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       /* Add the page to the process's address space. */
       if (!install_page (upage, kpage, writable)) 
         {
-          palloc_free_page (kpage);
+          process_free_user_page (kpage);// LAB3A new deallocator
           return false; 
         }
 
@@ -749,14 +762,16 @@ setup_stack (void **esp, const char *cmdline)
   uint8_t *sp;
   int i;
 
-  kpage = palloc_get_page (PAL_USER | PAL_ZERO);
+  // LAB3A: new allocator and record: stack's upage = PHYS_BASE-4096 (top of user VM).
+  kpage = process_alloc_user_page (PAL_USER | PAL_ZERO,
+                                   ((uint8_t *) PHYS_BASE) - PGSIZE); 
   if (kpage != NULL) 
     {
       success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
       if (success)
         *esp = PHYS_BASE;
       else
-        palloc_free_page (kpage);
+        process_free_user_page (kpage); // LAB3A: new deallocator
     }
 
   // LAB 2.2
@@ -874,6 +889,37 @@ install_page (void *upage, void *kpage, bool writable)
      address, then map our page there. */
   return (pagedir_get_page (t->pagedir, upage) == NULL
           && pagedir_set_page (t->pagedir, upage, kpage, writable));
+}
+
+/** LAB3A-Allocates one physical page for a user virtual page.
+
+   LAB2 used palloc_get_page(PAL_USER) directly.  In VM builds,
+   every user frame must go through frame_allocate() so the frame table
+   can later support eviction.  For this intermediate step, frame_allocate()
+   simply fails if the user pool is full. */
+static void *
+process_alloc_user_page (enum palloc_flags flags, void *upage)
+{
+#ifdef VM
+  struct frame_entry *frame;
+
+  ASSERT ((flags & PAL_USER) != 0);
+  frame = frame_allocate (flags, upage); //frame_allocate()是VM层对palloc_get_page()的封装,为了支持VM管理
+  return frame != NULL ? frame->kpage : NULL;
+#else
+  return palloc_get_page (flags); // 底层的frame allocator
+#endif
+}
+
+/** LAB3A-Releases a user page allocated by process_alloc_user_page(). */
+static void
+process_free_user_page (void *kpage)
+{
+#ifdef VM
+  frame_free (kpage); //封装
+#else
+  palloc_free_page (kpage);
+#endif
 }
 
 
