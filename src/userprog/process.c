@@ -907,6 +907,7 @@ process_alloc_user_page (enum palloc_flags flags, void *upage)
   frame = frame_allocate (flags, upage); //frame_allocate()是VM层对palloc_get_page()的封装,为了支持VM管理
   return frame != NULL ? frame->kpage : NULL;
 #else
+  (void) upage; //warning eliminate
   return palloc_get_page (flags); // 底层的frame allocator
 #endif
 }
