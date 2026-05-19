@@ -143,7 +143,7 @@ pintos_init (void)
     /* Run actions specified on kernel command line. */
     run_actions (argv);
   } else {
-    // TODO: no command line passed to kernel. Run interactively 
+    // no command line passed to kernel. Run interactively 
     tiny_shell();
   }
 
