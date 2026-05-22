@@ -23,6 +23,7 @@
 // LAB3A
 #ifdef VM
 #include "vm/frame.h"
+#include "vm/spt.h"
 #endif
 
 static thread_func start_process NO_RETURN;
@@ -34,6 +35,12 @@ static void find_tid_action (struct thread *t, void *aux);
 
 static void *process_alloc_user_page (enum palloc_flags flags, void *upage);
 static void process_free_user_page (void *kpage);
+#ifdef VM
+static bool process_spt_insert (void *upage, bool writable,
+                                 enum vm_page_type type, struct file *file,
+                                 off_t ofs, uint32_t read_bytes,
+                                 uint32_t zero_bytes, void *kpage);
+#endif
 
 /* LAB3A funcs end */
 
@@ -390,6 +397,13 @@ process_exit (void)
          directory before destroying the process's page
          directory, or our active page directory will be one
          that's been freed (and cleared). */
+
+// LAB3A : destroy SPT before destroying pagedir, 
+// cuz SPT may need to free user pages, which in turn needs the pagedir to be still active.
+#ifdef VM
+      spt_destroy (&cur->spt);
+#endif
+
       cur->pagedir = NULL;
       pagedir_activate (NULL);
       pagedir_destroy (pd);
@@ -507,6 +521,16 @@ load (const char *file_name, void (**eip) (void), void **esp)
   t->pagedir = pagedir_create ();
   if (t->pagedir == NULL) 
     goto done;
+
+    /* lAB3A: init SPT (& error check) after load() creates pagedir. */
+#ifdef VM
+  if (!spt_init (&t->spt))
+    {
+      pagedir_destroy (t->pagedir);
+      t->pagedir = NULL;
+      goto done;
+    }
+#endif
   process_activate ();
 
   // LAB 2.2: Extract the program name (the first token) from the command line.
@@ -736,10 +760,26 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
           return false; 
         }
 
+      /* lAB3A: insert its SPT entry after load_segment() installs a page. */
+#ifdef VM
+      if (!process_spt_insert (upage, writable,
+                                page_read_bytes > 0
+                                ? VM_PAGE_FILE : VM_PAGE_ZERO,
+                                page_read_bytes > 0 ? file : NULL,
+                                page_read_bytes > 0 ? ofs : 0,
+                                page_read_bytes, page_zero_bytes, kpage))
+        {
+          pagedir_clear_page (thread_current ()->pagedir, upage);
+          process_free_user_page (kpage);
+          return false;
+        }
+#endif
+
       /* Advance. */
       read_bytes -= page_read_bytes;
       zero_bytes -= page_zero_bytes;
       upage += PGSIZE;
+      ofs += PGSIZE; //LAB3A
     }
   return true;
 }
@@ -769,7 +809,22 @@ setup_stack (void **esp, const char *cmdline)
     {
       success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
       if (success)
-        *esp = PHYS_BASE;
+        {
+#ifdef VM
+          /* LAB3A: insert a VM_PAGE_ZERO SPT entry after setup_stack() installs the stack page*/
+          success = process_spt_insert (((uint8_t *) PHYS_BASE) - PGSIZE,
+                                         true, VM_PAGE_ZERO, NULL, 0, 0,
+                                         PGSIZE, kpage);
+          if (!success)
+            {
+              pagedir_clear_page (thread_current ()->pagedir,
+                                  ((uint8_t *) PHYS_BASE) - PGSIZE);
+              process_free_user_page (kpage);
+            }
+          else
+#endif
+            *esp = PHYS_BASE;
+        }
       else
         process_free_user_page (kpage); // LAB3A: new deallocator
     }
@@ -922,5 +977,43 @@ process_free_user_page (void *kpage)
   palloc_free_page (kpage);
 #endif
 }
+
+/** LAB3A-Records info about a user page in current process's SPT entry. */
+#ifdef VM
+static bool
+process_spt_insert (void *upage, bool writable, enum vm_page_type type,
+                     struct file *file, off_t ofs, uint32_t read_bytes,
+                     uint32_t zero_bytes, void *kpage)
+{
+  struct spt_entry *spte;
+
+  ASSERT (pg_ofs (upage) == 0);
+  ASSERT (read_bytes + zero_bytes == PGSIZE);
+
+  spte = malloc (sizeof *spte);
+  if (spte == NULL)
+    return false;
+
+  spte->upage = upage; 
+  spte->writable = writable; 
+  spte->type = type;
+  spte->state = kpage != NULL ? VM_PAGE_LOADED : VM_PAGE_NOT_LOADED;
+  spte->file = file;
+  spte->ofs = ofs;
+  spte->read_bytes = read_bytes;
+  spte->zero_bytes = zero_bytes;
+  spte->swap_slot = (size_t) -1;
+  spte->kpage = kpage;
+  spte->mapid = -1;
+
+  if (!spt_insert (&thread_current ()->spt, spte))
+    {
+      free (spte);
+      return false;
+    }
+
+  return true;
+}
+#endif
 
 
