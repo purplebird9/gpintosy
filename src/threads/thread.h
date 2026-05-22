@@ -4,6 +4,10 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
+// LAB3A
+#ifdef VM
+#include <hash.h>
+#endif
 
 struct file;
 struct child_process_status;
@@ -127,6 +131,11 @@ struct thread
 // 2.1
 #ifdef USERPROG
    int exit_status;                    /**< Exit status for user process. */
+#endif
+
+// LAB3A 
+#ifdef VM
+   struct hash spt;                       /**< Supplemental page table. */
 #endif
   };
 
