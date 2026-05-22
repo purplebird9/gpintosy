@@ -738,6 +738,16 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
+      // LAB3A-If VM, just insert an SPT entry. Lazy-load in page fault handler.
+#ifdef VM
+      if (!process_spt_insert (upage, writable,
+                               page_read_bytes > 0
+                               ? VM_PAGE_FILE : VM_PAGE_ZERO,
+                               page_read_bytes > 0 ? file : NULL,
+                               page_read_bytes > 0 ? ofs : 0,
+                               page_read_bytes, page_zero_bytes, NULL))
+        return false;
+#else // If not VM, still load the page immediately.
       /* Get a user frame.  
         In VM builds this records the frame in the
          global frame table; without VM it falls back to the old allocator. */
@@ -760,19 +770,6 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
           return false; 
         }
 
-      /* lAB3A: insert its SPT entry after load_segment() installs a page. */
-#ifdef VM
-      if (!process_spt_insert (upage, writable,
-                                page_read_bytes > 0
-                                ? VM_PAGE_FILE : VM_PAGE_ZERO,
-                                page_read_bytes > 0 ? file : NULL,
-                                page_read_bytes > 0 ? ofs : 0,
-                                page_read_bytes, page_zero_bytes, kpage))
-        {
-          pagedir_clear_page (thread_current ()->pagedir, upage);
-          process_free_user_page (kpage);
-          return false;
-        }
 #endif
 
       /* Advance. */

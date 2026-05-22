@@ -345,3 +345,53 @@ mmap()/munmap()
 ```
 
 你现在已经有了一个不错的 `spt.h/spt.c` 骨架；下一步主要不是重新设计，而是把它接到 `thread.h`、`process.c`、`exception.c`、`frame.c`、`syscall.c` 这些路径里。
+
+# Lazy-loading notice
+因为 lazy loading 之后，页面的生命周期变了。
+
+以前 eager loading 时，`load_segment()` 立刻：
+
+```c
+frame_allocate()
+file_read()
+pagedir_set_page()
+```
+
+如果中途失败，`load_segment()` 自己可以马上 `process_free_user_page(kpage)`。但 lazy loading 后，`load_segment()` 只登记 SPT：
+
+```c
+spte->state = VM_PAGE_NOT_LOADED;
+spte->kpage = NULL;
+```
+
+真正的 frame 是之后在 `page_fault()` 里分配的：
+
+```c
+frame = frame_allocate(PAL_USER, spte->upage);
+spte->kpage = frame->kpage;
+spte->state = VM_PAGE_LOADED;
+```
+
+所以进程退出时，可能有很多页已经因为 page fault 被加载进内存了。这些 frame 不再由 `load_segment()` 管，而是挂在对应的 `spte` 上。
+
+如果 `spt_destroy()` 只做：
+
+```c
+free(spte);
+```
+
+那就会丢掉 `spte->kpage` 这个指针，导致：
+
+- frame table 里还留着这个 frame
+- user pool 里的物理页没有归还
+- `struct frame_entry` 没有释放
+- 之后内存越来越少
+
+所以在 `spt_destroy_entry()` 里需要：
+
+```c
+if (spte->state == VM_PAGE_LOADED && spte->kpage != NULL)
+  frame_free(spte->kpage);
+```
+
+意思是：如果这个虚拟页现在真的占着一个物理 frame，进程退出时就把这个 frame 还回去。

@@ -3,6 +3,7 @@
 #include <hash.h>
 #include "threads/malloc.h"
 #include "threads/vaddr.h"
+#include "vm/frame.h"
 
 static unsigned spt_hash (const struct hash_elem *e, void *aux);
 static bool spt_less (const struct hash_elem *a,
@@ -118,5 +119,8 @@ static void
 spt_destroy_entry (struct hash_elem *e, void *aux UNUSED)
 {
   struct spt_entry *spte = hash_entry (e, struct spt_entry, elem);
+  // LAB3A: free the resident frame if the page is still loaded.
+  if (spte->state == VM_PAGE_LOADED && spte->kpage != NULL)
+    frame_free (spte->kpage);
   spt_free_entry (spte);
 }
