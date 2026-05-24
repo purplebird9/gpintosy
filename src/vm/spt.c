@@ -1,9 +1,12 @@
 #include "vm/spt.h"
 #include <debug.h>
 #include <hash.h>
+#include "threads/thread.h"
 #include "threads/malloc.h"
 #include "threads/vaddr.h"
+#include "userprog/pagedir.h"
 #include "vm/frame.h"
+#include "vm/swap.h"
 
 static unsigned spt_hash (const struct hash_elem *e, void *aux);
 static bool spt_less (const struct hash_elem *a,
@@ -22,10 +25,10 @@ spt_init (struct hash *spt)
   return hash_init (spt, spt_hash, spt_less, NULL);
 }
 
-/** Destroys SPT and frees every entry still recorded in it.
+/** Destroys SPT and frees every entry in spt_destroy_entry().
 
-   TODO: Later, this is also the right place to release per-page resources:
-   resident frames, swap slots, and mmap write-back state. */
+   Also the place to release per-page resources:
+   resident frames, swap slots, and TODO: mmap write-back state. */
 void
 spt_destroy (struct hash *spt)
 {
@@ -119,8 +122,22 @@ static void
 spt_destroy_entry (struct hash_elem *e, void *aux UNUSED)
 {
   struct spt_entry *spte = hash_entry (e, struct spt_entry, elem);
-  // LAB3A: free the resident frame if the page is still loaded.
+  struct thread *cur = thread_current ();
+  // LAB3A: free the resident frame && pagedir if the page is still loaded; swap slot 
   if (spte->state == VM_PAGE_LOADED && spte->kpage != NULL)
-    frame_free (spte->kpage);
+    {
+      if (cur->pagedir != NULL
+          && pagedir_get_page (cur->pagedir, spte->upage) != NULL)
+        // Also clear the page in pagedir.
+        pagedir_clear_page (cur->pagedir, spte->upage);
+      frame_free (spte->kpage);
+    } 
+  // LAB3A: free the swap slot if the page is still in swap. 
+  // (If the page is loaded, its swap slot should have been freed when it was loaded.)
+  else if (spte->type == VM_PAGE_SWAP && spte->swap_slot != (size_t) -1)
+    { 
+      swap_free (spte->swap_slot);
+    }
+
   spt_free_entry (spte);
 }
