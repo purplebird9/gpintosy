@@ -390,6 +390,12 @@ process_exit (void)
   pd = cur->pagedir;
   if (pd != NULL) 
     {
+// LAB3A : destroy SPT before destroying pagedir, 
+// cuz SPT may need to free user pages, which in turn needs the pagedir to be still active.
+#ifdef VM
+      spt_destroy (&cur->spt);
+#endif
+
       /* Correct ordering here is crucial.  We must set
          cur->pagedir to NULL before switching page directories,
          so that a timer interrupt can't switch back to the
@@ -397,13 +403,6 @@ process_exit (void)
          directory before destroying the process's page
          directory, or our active page directory will be one
          that's been freed (and cleared). */
-
-// LAB3A : destroy SPT before destroying pagedir, 
-// cuz SPT may need to free user pages, which in turn needs the pagedir to be still active.
-#ifdef VM
-      spt_destroy (&cur->spt);
-#endif
-
       cur->pagedir = NULL;
       pagedir_activate (NULL);
       pagedir_destroy (pd);
