@@ -6,11 +6,27 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 
+/* LAB3A starts */
+#include "userprog/pagedir.h"
+#include "filesys/file.h"
+#include "threads/vaddr.h"
+#include <string.h>
+#ifdef VM
+#include "vm/frame.h"
+#include "vm/spt.h"
+#endif
+/* lAB3A ends */
+
 /** Number of page faults processed. */
 static long long page_fault_cnt;
 
 static void kill (struct intr_frame *);
 static void page_fault (struct intr_frame *);
+
+//LAB3A
+#ifdef VM
+static bool vm_load_page (struct spt_entry *spte);
+#endif
 
 /** Registers handlers for interrupts that can be caused by user
    programs.
@@ -119,7 +135,7 @@ kill (struct intr_frame *f)
    description of "Interrupt 14--Page Fault Exception (#PF)" in
    [IA32-v3a] section 5.15 "Exception and Interrupt Reference". */
 static void
-page_fault (struct intr_frame *f) 
+page_fault (struct intr_frame *f) // f:exception发生时 CPU 状态的快照。主要存储f->error_code
 {
   bool not_present;  /**< True: not-present page, false: writing r/o page. */
   bool write;        /**< True: access was write, false: access was read. */
@@ -143,10 +159,25 @@ page_fault (struct intr_frame *f)
   page_fault_cnt++;
 
   /* Determine cause. */
-  not_present = (f->error_code & PF_P) == 0;
-  write = (f->error_code & PF_W) != 0;
-  user = (f->error_code & PF_U) != 0;
+  not_present = (f->error_code & PF_P) == 0; // not_present->lazy-loading
+  write = (f->error_code & PF_W) != 0;// write还是read导致的page fault, 判断权限
+  user = (f->error_code & PF_U) != 0;//fault在user mode还是kernel mode
 
+/*LAB 3A: If the fault was a not-present page, try to load the page from disk.*/ 
+#ifdef VM
+  if (not_present && is_user_vaddr (fault_addr))
+    {
+      struct thread *cur = thread_current ();
+      struct spt_entry *spte = cur->pagedir != NULL
+                               ? spt_find (&cur->spt, fault_addr)
+                               : NULL;
+
+      // Call vm_load_page().                     
+      if (spte != NULL && (!write || spte->writable) && vm_load_page (spte))
+        return;
+    }
+#endif
+/* LAB3A: if no successful load, fall through to old code.*/
 
   // LAB 2.3
   /* Let get_user()/put_user() turn a bad user-memory probe into
@@ -169,3 +200,63 @@ page_fault (struct intr_frame *f)
   kill (f);
 }
 
+#ifdef VM
+/** Loads one SPT entry into memory and installs it in the page table. */
+static bool
+vm_load_page (struct spt_entry *spte)
+{
+  struct frame_entry *frame;
+  void *kpage;
+  struct thread *cur = thread_current ();
+
+  // already loaded
+  if (spte->state == VM_PAGE_LOADED)
+    return true;
+    
+  frame = frame_allocate (PAL_USER, spte->upage);
+  if (frame == NULL)
+    return false;
+  kpage = frame->kpage;
+
+  switch (spte->type)
+    {
+    case VM_PAGE_FILE: // 从文件加载
+      frame_pin (kpage); // load过程中锁定frame，防止被换出
+      lock_acquire (&filesys_lock); // filesystem lock
+      if (file_read_at (spte->file, kpage, spte->read_bytes, spte->ofs)
+          != (int) spte->read_bytes)
+        {
+          lock_release (&filesys_lock);
+          frame_unpin (kpage);
+          frame_free (kpage);
+          return false;
+        }
+      lock_release (&filesys_lock);
+      memset ((uint8_t *) kpage + spte->read_bytes, 0, spte->zero_bytes); // 文件末尾剩余部分置0
+      frame_unpin (kpage);
+      break;
+
+    case VM_PAGE_ZERO:
+      memset (kpage, 0, PGSIZE);
+      break;
+
+    default:
+      frame_free (kpage);
+      return false;
+    }
+
+  // Call pagedir_get_page() to check that another thread hasn't loaded a page at spte->upage since.
+  // Call pagedir_set_page() to add a mapping from upage to frame.
+  if (pagedir_get_page (cur->pagedir, spte->upage) != NULL
+      || !pagedir_set_page (cur->pagedir, spte->upage, kpage,
+                            spte->writable))
+    {
+      frame_free (kpage);
+      return false;
+    }
+
+  spte->kpage = kpage;
+  spte->state = VM_PAGE_LOADED;
+  return true;
+}
+#endif
