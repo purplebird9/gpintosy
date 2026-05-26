@@ -34,6 +34,7 @@
 // LAB3A
 #ifdef VM
 #include "vm/frame.h"
+#include "vm/swap.h"
 #endif
 #ifdef FILESYS
 #include "devices/block.h" //devices/input.c
@@ -134,6 +135,9 @@ pintos_init (void)
   /* Initialize file system. */
   ide_init ();
   locate_block_devices ();
+#ifdef VM
+  swap_table_init ();
+#endif
   filesys_init (format_filesys);
 #endif
 
