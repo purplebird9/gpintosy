@@ -14,6 +14,7 @@
 #ifdef VM
 #include "vm/frame.h"
 #include "vm/spt.h"
+#include "vm/swap.h"
 #endif
 /* lAB3A ends */
 
@@ -238,6 +239,17 @@ vm_load_page (struct spt_entry *spte)
 
     case VM_PAGE_ZERO:
       memset (kpage, 0, PGSIZE);
+      break;
+
+    case VM_PAGE_SWAP:// load from swap slot
+      if (!swap_in (spte->swap_slot, kpage))
+        {
+          frame_free (kpage);
+          return false;
+        }
+        
+      // After a successful swap-in, the SPT entry should stop referring to the slot
+      spte->swap_slot = (size_t) -1; // spte->swap_slot 设回 -1。
       break;
 
     default:

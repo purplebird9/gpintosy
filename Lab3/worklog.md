@@ -48,5 +48,18 @@ setup_stack()
 - [ ] page reclamation in `process_exit()`. `process_exit()/munmap()/eviction` 负责根据 SPT 清理或写回。
 
 
+# 5.24
+**11:00-12:00**
+- Per-page resource free in `process_exit()`->`spt_destroy_entry()`.
+- [x] swap management.
+- [ ] eviction
+
+check: `process.c`的所有改动都写在`#ifdef VM`编译宏之内.应该不会影响LAB2.
+
+
+# 5.26
+**15:15-17:00**
+- add swap table
+- [ ]accessed&dirty bit?
 
 
