@@ -59,7 +59,9 @@ check: `process.c`的所有改动都写在`#ifdef VM`编译宏之内.应该不�
 
 # 5.26
 **15:15-17:00**
-- add swap table
-- [ ]accessed&dirty bit?
+- Add swap table
+- Naive eviction.
+- [ ]accessed&dirty bit?  --- after a naive eviction implementation
+- [ ]eviction victim frame的去处, 当前是简化实现: 统一写到swap.
 
 
