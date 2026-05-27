@@ -818,8 +818,13 @@ setup_stack (void **esp, const char *cmdline)
               process_free_user_page (kpage);
             }
           else
+            {
+              frame_unpin (kpage);
+              *esp = PHYS_BASE;
+            }
+#else
+          *esp = PHYS_BASE;
 #endif
-            *esp = PHYS_BASE;
         }
       else
         process_free_user_page (kpage); // LAB3A: new deallocator

@@ -61,7 +61,7 @@ frame_allocate (enum palloc_flags flags, void *upage)
       // frame: the frame entry for reuse, returned from frame_evict().
       frame->owner = thread_current (); 
       frame->upage = round_upage;
-      frame->pinned = false;
+      frame->pinned = true;// SYNC: avoid eviction during frame initialization
       return frame;
     }
 
@@ -75,7 +75,7 @@ frame_allocate (enum palloc_flags flags, void *upage)
   frame->kpage = kpage;
   frame->owner = thread_current ();
   frame->upage = round_upage;
-  frame->pinned = false;
+  frame->pinned = true; // SYNC: avoid eviction during frame initialization
 
   lock_acquire (&frame_lock); //sync
   list_push_back (&frame_table, &frame->elem);
@@ -93,19 +93,21 @@ frame_evict (void)
 
   lock_acquire (&frame_lock);
   victim = frame_select_victim_random_locked (); // EVICTION
-  if (victim != NULL)
-    victim->pinned = true;
-  lock_release (&frame_lock);
-
   if (victim == NULL)
-    return NULL;
-
-  if (!frame_evict_page (victim))
     {
-      victim->pinned = false;
+      lock_release (&frame_lock);
       return NULL;
     }
 
+  victim->pinned = true;// SYNC: pin the victim frame so it won't be evicted by concurrent frame_evict() calls before evict finish.
+  if (!frame_evict_page (victim))// EVICT happens
+    {
+      victim->pinned = false;
+      lock_release (&frame_lock);
+      return NULL;
+    }
+
+  lock_release (&frame_lock);
   return victim;
 }
 
@@ -166,8 +168,11 @@ frame_evict_page (struct frame_entry *victim)
   size_t slot;
 
   ASSERT (victim != NULL);
+  ASSERT (lock_held_by_current_thread (&frame_lock));
   ASSERT (victim->owner != NULL);
   ASSERT (victim->upage != NULL);
+  ASSERT (victim->kpage != NULL);
+  ASSERT (pg_ofs (victim->kpage) == 0);// SYNC check: frame's kpage must be page-aligned
 
   upage = pg_round_down (victim->upage);
   victim->upage = upage;
@@ -235,16 +240,32 @@ frame_lookup (void *kpage)
 void
 frame_free (void *kpage)
 {
-  struct frame_entry *frame;
+  struct frame_entry *frame = NULL;
+  struct list_elem *e;
 
   if (kpage == NULL)
     return;
 
-  frame = frame_lookup (kpage);
-  if (frame == NULL)
-    return;
-
+  // frame = frame_lookup (kpage);
+  // SYNC: 在同一次持锁期间完成查找和摘链，去掉“lookup 解锁，再加锁 remove”的竞态窗口。
   lock_acquire (&frame_lock);
+  for (e = list_begin (&frame_table); e != list_end (&frame_table);
+       e = list_next (e))
+    {
+      struct frame_entry *candidate = list_entry (e, struct frame_entry, elem);
+      if (candidate->kpage == kpage)
+        {
+          frame = candidate;
+          break;
+        }
+    }
+
+  if (frame == NULL)
+    {
+      lock_release (&frame_lock);
+      return;
+    }
+
   list_remove (&frame->elem);
   lock_release (&frame_lock);
 

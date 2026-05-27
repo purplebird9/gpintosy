@@ -218,7 +218,6 @@ vm_load_page (struct spt_entry *spte)
   if (frame == NULL)
     return false;
   kpage = frame->kpage;
-  frame_pin (kpage); // prevent eviction during loading
 
   /* Load Start. */
   switch (spte->type)
