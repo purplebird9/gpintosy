@@ -202,7 +202,7 @@ page_fault (struct intr_frame *f) // f:exception发生时 CPU 状态的快照。
 }
 
 #ifdef VM
-/** Loads one SPT entry into memory and installs it in the page table. */
+/** LAB3A: Loads one SPT entry into memory and installs it in the page table. */
 static bool
 vm_load_page (struct spt_entry *spte)
 {
@@ -218,11 +218,12 @@ vm_load_page (struct spt_entry *spte)
   if (frame == NULL)
     return false;
   kpage = frame->kpage;
+  frame_pin (kpage); // prevent eviction during loading
 
+  /* Load Start. */
   switch (spte->type)
     {
     case VM_PAGE_FILE: // 从文件加载
-      frame_pin (kpage); // load过程中锁定frame，防止被换出
       lock_acquire (&filesys_lock); // filesystem lock
       if (file_read_at (spte->file, kpage, spte->read_bytes, spte->ofs)
           != (int) spte->read_bytes)
@@ -234,7 +235,6 @@ vm_load_page (struct spt_entry *spte)
         }
       lock_release (&filesys_lock);
       memset ((uint8_t *) kpage + spte->read_bytes, 0, spte->zero_bytes); // 文件末尾剩余部分置0
-      frame_unpin (kpage);
       break;
 
     case VM_PAGE_ZERO:
@@ -244,6 +244,7 @@ vm_load_page (struct spt_entry *spte)
     case VM_PAGE_SWAP:// load from swap slot
       if (!swap_in (spte->swap_slot, kpage))
         {
+          frame_unpin (kpage);
           frame_free (kpage);
           return false;
         }
@@ -253,6 +254,7 @@ vm_load_page (struct spt_entry *spte)
       break;
 
     default:
+      frame_unpin (kpage);
       frame_free (kpage);
       return false;
     }
@@ -263,12 +265,15 @@ vm_load_page (struct spt_entry *spte)
       || !pagedir_set_page (cur->pagedir, spte->upage, kpage,
                             spte->writable))
     {
+      frame_unpin (kpage);
       frame_free (kpage);
       return false;
     }
 
   spte->kpage = kpage;
   spte->state = VM_PAGE_LOADED;
+  /* Load Finished. */
+  frame_unpin (kpage);
   return true;
 }
 #endif
