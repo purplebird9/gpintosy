@@ -42,9 +42,10 @@ frame_allocate (enum palloc_flags flags, void *upage)
 {
   struct frame_entry *frame;
   void *kpage;
+  void *round_upage;
 
   ASSERT ((flags & PAL_USER) != 0); // must be from user pool
-  ASSERT (upage == NULL || pg_ofs (upage) == 0); // upage must be aligned
+  round_upage = upage != NULL ? pg_round_down (upage) : NULL; //LAB3A Fix bug: argument 'upage' may not be page-aligned, so round it.
 
   kpage = palloc_get_page (flags); // try to obtain a free user frame
   if (kpage == NULL) // no available frame
@@ -59,7 +60,7 @@ frame_allocate (enum palloc_flags flags, void *upage)
 
       // frame: the frame entry for reuse, returned from frame_evict().
       frame->owner = thread_current (); 
-      frame->upage = upage;
+      frame->upage = round_upage;
       frame->pinned = false;
       return frame;
     }
@@ -73,7 +74,7 @@ frame_allocate (enum palloc_flags flags, void *upage)
 
   frame->kpage = kpage;
   frame->owner = thread_current ();
-  frame->upage = upage;
+  frame->upage = round_upage;
   frame->pinned = false;
 
   lock_acquire (&frame_lock); //sync
@@ -159,6 +160,7 @@ static bool
 frame_evict_page (struct frame_entry *victim)
 {
   struct spt_entry *spte;
+  void *upage;
   bool dirty;
   bool must_swap;
   size_t slot;
@@ -167,13 +169,16 @@ frame_evict_page (struct frame_entry *victim)
   ASSERT (victim->owner != NULL);
   ASSERT (victim->upage != NULL);
 
-  spte = spt_find (&victim->owner->spt, victim->upage);
+  upage = pg_round_down (victim->upage);
+  victim->upage = upage;
+
+  spte = spt_find (&victim->owner->spt, upage);
   if (spte == NULL)
     return false;
 
   // dirty is read-only through USER.
   dirty = victim->owner->pagedir != NULL
-          && pagedir_is_dirty (victim->owner->pagedir, victim->upage);
+          && pagedir_is_dirty (victim->owner->pagedir, upage);
   must_swap = spte->type == VM_PAGE_SWAP || dirty; // swap case: swap-backed || dirty
 
   if (must_swap)
@@ -183,7 +188,7 @@ frame_evict_page (struct frame_entry *victim)
     }
 
   if (victim->owner->pagedir != NULL)
-    pagedir_clear_page (victim->owner->pagedir, victim->upage);
+    pagedir_clear_page (victim->owner->pagedir, upage);
 
   if (must_swap)
     {
