@@ -80,4 +80,31 @@ user VA upage  ──pagedir──> physical frame <──direct map── kerne
 
 
 # 5.27
+**13:00-15:00**
+```
+1. syscall 访问 lazy page 会失败。
+syscall.c (line 98) 的 check_user_vaddr() 要求 pagedir_get_page(...) != NULL，这会把尚未加载但 SPT 合法的 lazy page 直接判死，导致系统调用里的用户 buffer 不能靠 page fault 装入。这里需要改成允许 SPT 中存在的 not-present page，或者直接用 get_user/put_user 触发 fault。
+
+2. Exercise 1.2 的同步/并行性还不够。
+不只是 replacement algorithm 随机的问题。当前 eviction 在 swap_out() 之前没有先从 owner pagedir 取消映射，victim owner 理论上可能在 eviction I/O 期间继续访问/修改该页。见 frame.c (line 181)。也缺少 per-frame / per-SPT entry 级别的同步设计。
+```
+
+- syscall modification: `check_user_vaddr()`放行未加载的page.
+  现在的合法地址: 页已经在内存里/页虽然不在内存里，但 SPT 知道怎么把它加载进来。
+
+```text
+copy_in()
+  -> check_user_vaddr()
+       地址 present? OK
+       或 SPT 有记录? OK
+       否则非法，exit(-1)
+  -> get_user()
+       页已在内存：直接读成功
+       页不在内存但合法：触发 page fault
+            -> page_fault()
+            -> spt_find()
+            -> vm_load_page()
+            -> pagedir_set_page()
+       page fault 返回后，get_user 重新读成功
+```
 

@@ -15,6 +15,9 @@
 #include "threads/vaddr.h"
 #include "userprog/pagedir.h"
 #include "userprog/process.h"
+#ifdef VM
+#include "vm/spt.h"
+#endif
 
 
 // LAB 2.4
@@ -97,9 +100,23 @@ syscall_close_all_files (void)
 static void
 check_user_vaddr (const void *uaddr)
 {
-  if (uaddr == NULL || !is_user_vaddr (uaddr)
-      || pagedir_get_page (thread_current ()->pagedir, uaddr) == NULL)
+  /* LAB3A-task2.1 modification */
+  struct thread *cur = thread_current ();
+
+  if (uaddr == NULL || !is_user_vaddr (uaddr)) // not user
     sys_exit (-1);
+
+#ifdef VM
+// LAB3A: 把SPT中合法的lazy-page也放行, 而不是直接杀死进程
+  if (pagedir_get_page (cur->pagedir, uaddr) != NULL
+      || spt_find (&cur->spt, uaddr) != NULL)
+    return;
+#else
+  if (pagedir_get_page (cur->pagedir, uaddr) != NULL)
+    return;
+#endif
+
+  sys_exit (-1);
 }
 
 /* 检查用户缓冲区：遍历整个缓冲区范围以确保每一页都是合法的用户地址 */
