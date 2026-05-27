@@ -75,7 +75,8 @@ lookup_page (uint32_t *pd, const void *vaddr, bool create)
   /* Check for a page table for VADDR.
      If one is missing, create one if requested. */
   pde = pd + pd_no (vaddr);
-  if (*pde == 0) 
+  //if (*pde == 0) 
+  if ((*pde & PTE_P) == 0) 
     {
       if (create)
         {
