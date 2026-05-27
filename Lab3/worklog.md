@@ -108,3 +108,12 @@ copy_in()
        page fault 返回后，get_user 重新读成功
 ```
 
+**Check**
+```text
+FAIL tests/vm/page-parallel
+FAIL tests/filesys/base/sm-seq-random
+FAIL tests/userprog/close-normal
+FAIL tests/userprog/bad-jump
+```
+
+猜测: some synchronization problem.
