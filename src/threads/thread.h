@@ -125,8 +125,6 @@ struct thread
     struct child_process_status *child_info; /**< LAB 2.4: Shared status with parent. */
 #endif
 
-   /* Owned by thread.c. */
-   unsigned magic;                     /**< Detects stack overflow. */
 
 // 2.1
 #ifdef USERPROG
@@ -137,6 +135,9 @@ struct thread
 #ifdef VM
    struct hash spt;                       /**< Supplemental page table. */
 #endif
+
+   /* Owned by thread.c. */
+   unsigned magic;                     /**< Detects stack overflow. */
   };
 
 /** If false (default), use round-robin scheduler.
