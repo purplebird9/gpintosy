@@ -1006,6 +1006,9 @@ process_spt_insert (void *upage, bool writable, enum vm_page_type type,
   spte->swap_slot = (size_t) -1;
   spte->kpage = kpage;
   spte->mapid = -1;
+  //LAB3A-B6: per-page wait channel for loading/eviction.
+  lock_init (&spte->lock);
+  cond_init (&spte->cv);
 
   if (!spt_insert (&thread_current ()->spt, spte))
     {

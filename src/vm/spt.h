@@ -12,6 +12,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "filesys/off_t.h"
+#include "threads/synch.h"
 
 struct file;
 
@@ -29,7 +30,9 @@ enum vm_page_type
 enum vm_page_state 
   {
     VM_PAGE_NOT_LOADED,        /**< No frame is installed in pagedir. */
-    VM_PAGE_LOADED             /**< KPAGE is installed for UPAGE. */
+    VM_PAGE_LOADED,            /**< KPAGE is installed for UPAGE. */
+    VM_PAGE_LOADING,           /**< LAB3A-B6: fault is reading this page in. */
+    VM_PAGE_EVICTING           /**< LAB3A-B6: eviction owns page state update. */
   };
 
 /** One supplemental page table entry.
@@ -57,6 +60,8 @@ struct spt_entry
     void *kpage;               /**< Kernel VA of resident user frame. */
 
     int mapid;                 /**< mmap id; -1 for non-mmap pages. */
+    struct lock lock;          /**< LAB3A-B6: protects page state transitions. */
+    struct condition cv;       /**< LAB3A-B6: wait for loading/eviction finish. */
     struct hash_elem elem;     /**< Element in the per-process SPT hash. */
   };
 

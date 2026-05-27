@@ -180,6 +180,18 @@ frame_evict_page (struct frame_entry *victim)
   spte = spt_find (&victim->owner->spt, upage);
   if (spte == NULL)
     return false;
+  
+  lock_acquire (&spte->lock);
+  if (spte->state != VM_PAGE_LOADED || spte->kpage != victim->kpage)
+    {
+      lock_release (&spte->lock);
+      return false;
+    }
+
+  spte->state = VM_PAGE_EVICTING; //LAB3A-B6: faulting threads must wait.
+  if (victim->owner->pagedir != NULL)
+    //LAB3A-B6: stop owner from writing the frame during eviction.
+    pagedir_clear_page (victim->owner->pagedir, upage);
 
   // dirty is read-only through USER.
   dirty = victim->owner->pagedir != NULL
@@ -189,14 +201,22 @@ frame_evict_page (struct frame_entry *victim)
   if (must_swap)
     {
       if (!swap_out (victim->kpage, &slot))
-        return false;
+        {
+          //LAB3A-B6: restore access if eviction cannot finish.
+          spte->state = VM_PAGE_LOADED;
+          if (victim->owner->pagedir != NULL
+              && pagedir_get_page (victim->owner->pagedir, upage) == NULL)
+            pagedir_set_page (victim->owner->pagedir, upage,
+                              victim->kpage, spte->writable);
+          cond_broadcast (&spte->cv, &spte->lock);
+          lock_release (&spte->lock);
+          return false;
+        }
     }
-
-  if (victim->owner->pagedir != NULL)
-    pagedir_clear_page (victim->owner->pagedir, upage);
 
   if (must_swap)
     {
+      //LAB3A-B6: faulting owner will reload from this swap slot.
       spte->type = VM_PAGE_SWAP;
       spte->swap_slot = slot;
     }
@@ -205,6 +225,9 @@ frame_evict_page (struct frame_entry *victim)
 
   spte->state = VM_PAGE_NOT_LOADED;
   spte->kpage = NULL;
+  //LAB3A-B6: page can now be faulted back from swap/file.
+  cond_broadcast (&spte->cv, &spte->lock);
+  lock_release (&spte->lock);
 
   return true;
 }
@@ -253,7 +276,7 @@ frame_free (void *kpage)
        e = list_next (e))
     {
       struct frame_entry *candidate = list_entry (e, struct frame_entry, elem);
-      if (candidate->kpage == kpage)
+      if (candidate->kpage == kpage && candidate->owner == thread_current ())
         {
           frame = candidate;
           break;

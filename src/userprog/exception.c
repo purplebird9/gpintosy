@@ -209,25 +209,60 @@ vm_load_page (struct spt_entry *spte)
   struct frame_entry *frame;
   void *kpage;
   struct thread *cur = thread_current ();
+  enum vm_page_type type;
+  struct file *file;
+  off_t ofs;
+  uint32_t read_bytes;
+  size_t swap_slot;
+  bool writable;
+
+  lock_acquire (&spte->lock);
+  //LAB3A-B6: wait if another thread is loading/evicting this page.
+  while (spte->state == VM_PAGE_EVICTING
+         || spte->state == VM_PAGE_LOADING)
+    cond_wait (&spte->cv, &spte->lock);
 
   // already loaded
   if (spte->state == VM_PAGE_LOADED)
-    return true;
-    
+    {
+      lock_release (&spte->lock);
+      return true;
+    }
+
+  spte->state = VM_PAGE_LOADING; //LAB3A-B6: block duplicate faults.
+  type = spte->type;
+  file = spte->file;
+  ofs = spte->ofs;
+  read_bytes = spte->read_bytes;
+  swap_slot = spte->swap_slot;
+  writable = spte->writable;
+  lock_release (&spte->lock);
+     
   frame = frame_allocate (PAL_USER, spte->upage);
   if (frame == NULL)
-    return false;
+    {
+      //LAB3A-B6: release waiters if loading fails.
+      lock_acquire (&spte->lock);
+      spte->state = VM_PAGE_NOT_LOADED;
+      cond_broadcast (&spte->cv, &spte->lock);
+      lock_release (&spte->lock);
+      return false;
+    }
   kpage = frame->kpage;
 
   /* Load Start. */
-  switch (spte->type)
+  switch (type)
     {
     case VM_PAGE_FILE: // 从文件加载
       lock_acquire (&filesys_lock); // filesystem lock
-      if (file_read_at (spte->file, kpage, spte->read_bytes, spte->ofs)
-          != (int) spte->read_bytes)
+      if (file_read_at (file, kpage, read_bytes, ofs) != (int) read_bytes)
         {
           lock_release (&filesys_lock);
+          //LAB3A-B6: cancel loading state before freeing the frame.
+          lock_acquire (&spte->lock);
+          spte->state = VM_PAGE_NOT_LOADED;
+          cond_broadcast (&spte->cv, &spte->lock);
+          lock_release (&spte->lock);
           frame_unpin (kpage);
           frame_free (kpage);
           return false;
@@ -241,8 +276,13 @@ vm_load_page (struct spt_entry *spte)
       break;
 
     case VM_PAGE_SWAP:// load from swap slot
-      if (!swap_in (spte->swap_slot, kpage))
+      if (!swap_in (swap_slot, kpage))
         {
+          //LAB3A-B6: cancel loading state before freeing the frame.
+          lock_acquire (&spte->lock);
+          spte->state = VM_PAGE_NOT_LOADED;
+          cond_broadcast (&spte->cv, &spte->lock);
+          lock_release (&spte->lock);
           frame_unpin (kpage);
           frame_free (kpage);
           return false;
@@ -253,6 +293,11 @@ vm_load_page (struct spt_entry *spte)
       break;
 
     default:
+      //LAB3A-B6: cancel loading state before freeing the frame.
+      lock_acquire (&spte->lock);
+      spte->state = VM_PAGE_NOT_LOADED;
+      cond_broadcast (&spte->cv, &spte->lock);
+      lock_release (&spte->lock);
       frame_unpin (kpage);
       frame_free (kpage);
       return false;
@@ -262,15 +307,26 @@ vm_load_page (struct spt_entry *spte)
   // Call pagedir_set_page() to add a mapping from upage to frame.
   if (pagedir_get_page (cur->pagedir, spte->upage) != NULL
       || !pagedir_set_page (cur->pagedir, spte->upage, kpage,
-                            spte->writable))
+                            writable))
     {
+      //LAB3A-B6: cancel loading state before freeing the frame.
+      lock_acquire (&spte->lock);
+      spte->state = VM_PAGE_NOT_LOADED;
+      cond_broadcast (&spte->cv, &spte->lock);
+      lock_release (&spte->lock);
       frame_unpin (kpage);
       frame_free (kpage);
       return false;
     }
 
+  lock_acquire (&spte->lock);
   spte->kpage = kpage;
   spte->state = VM_PAGE_LOADED;
+  if (type == VM_PAGE_SWAP)
+    spte->swap_slot = (size_t) -1;
+  //LAB3A-B6: wake faults waiting for this page to become stable.
+  cond_broadcast (&spte->cv, &spte->lock);
+  lock_release (&spte->lock);
   /* Load Finished. */
   frame_unpin (kpage);
   return true;

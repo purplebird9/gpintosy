@@ -123,6 +123,16 @@ spt_destroy_entry (struct hash_elem *e, void *aux UNUSED)
 {
   struct spt_entry *spte = hash_entry (e, struct spt_entry, elem);
   struct thread *cur = thread_current ();
+  void *kpage = NULL;
+  bool free_swap = false;
+  size_t swap_slot = (size_t) -1;
+
+  lock_acquire (&spte->lock);
+  //LAB3A-B6: don't free an entry while eviction/loading uses it.
+  while (spte->state == VM_PAGE_EVICTING
+         || spte->state == VM_PAGE_LOADING)
+    cond_wait (&spte->cv, &spte->lock);
+
   // LAB3A: free the resident frame && pagedir if the page is still loaded; swap slot 
   if (spte->state == VM_PAGE_LOADED && spte->kpage != NULL)
     {
@@ -130,14 +140,24 @@ spt_destroy_entry (struct hash_elem *e, void *aux UNUSED)
           && pagedir_get_page (cur->pagedir, spte->upage) != NULL)
         // Also clear the page in pagedir.
         pagedir_clear_page (cur->pagedir, spte->upage);
-      frame_free (spte->kpage);
+      kpage = spte->kpage;
+      spte->state = VM_PAGE_NOT_LOADED;
+      spte->kpage = NULL;
     } 
   // LAB3A: free the swap slot if the page is still in swap. 
   // (If the page is loaded, its swap slot should have been freed when it was loaded.)
   else if (spte->type == VM_PAGE_SWAP && spte->swap_slot != (size_t) -1)
     { 
-      swap_free (spte->swap_slot);
+      free_swap = true;
+      swap_slot = spte->swap_slot;
+      spte->swap_slot = (size_t) -1;
     }
+  lock_release (&spte->lock);
+
+  if (kpage != NULL)
+    frame_free (kpage);
+  if (free_swap)
+    swap_free (swap_slot);
 
   spt_free_entry (spte);
 }

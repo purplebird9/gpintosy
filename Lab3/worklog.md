@@ -197,8 +197,8 @@ hda4 (swap): 0 reads, 0 writes
 
 ## Sync:
 对照doc修改同步设计.
-- [ ]eviction 在 swap_out() 之前没有先从 owner pagedir 取消映射，victim owner可能在 eviction期间继续修改该页。
-- [ ]page load的时候另一个进程不能interfere(e.g. evict).
+- [x]eviction 在 swap_out() 之前没有先从 owner pagedir 取消映射，victim owner可能在 eviction期间继续修改该页。
+- [x]page load的时候另一个进程不能interfere(e.g. evict).
 - [ ]缺少 per-frame / per-SPT entry 级别的同步设计.
 
 ## Console Disorder:
@@ -231,3 +231,16 @@ Differences in `diff -u' format:
 TODO:
 1. Replacement Algorithm
 2. Fix Synchronization.
+
+
+20:30 all passed?记得复现一下.
+
+**21:00-22:00**
+fix:
+- pinned=true during frame initialization(SPTE, PTE)
+- always hold lock until eviction ends.---so that other proc does not interfere?x
+  - frame_lock 只保护frame table.
+  - Q user instruction -> MMU -> Q.pagedir/PTE -> physical frame, 这条路径不会拿frame_lock.
+- Solve design doc-B6: 
+  - P evicts Q's frame->I/O(swap_out), very slow!->Q scheduled->Q shouldn't modify the frame!
+  - 现在 eviction 会先把被驱逐页的 SPT 状态设为 VM_PAGE_EVICTING，立刻清掉 owner 的 PTE，阻止 Q 继续访问/修改该页，然后再做 swap I/O。Q 如果在这期间 fault 同一页，会在 spte->lock/cv 上等待，直到 eviction 完成。
