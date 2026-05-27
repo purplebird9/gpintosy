@@ -355,6 +355,19 @@ process_exit (void)
     }
   lock_release (&filesys_lock);
 
+#ifdef USERPROG
+  /* 打印退出信息，仅针对用户进程，且不是halt */
+ // LAB 2 DEBUG: 把打印退出信息挪回process_exit()
+  if (cur->pagedir != NULL && strcmp(cur->name, "main") != 0 && strcmp(cur->name, "idle") != 0) {
+    char proc_name[16];
+    strlcpy(proc_name, cur->name, sizeof(proc_name));
+    char *space = strchr(proc_name, ' ');
+    if (space) *space = '\0';
+    printf("%s: exit(%d)\n", proc_name, cur->exit_status);
+  } 
+    
+#endif
+
   // LAB 2.4: Publish exit status to parent and wake any waiter.
   if (cur->child_info != NULL)
     {
@@ -371,19 +384,6 @@ process_exit (void)
       e = list_pop_front (&cur->child_processes);
       release_child_process (list_entry (e, struct child_process_status, elem));
     }
-
-#ifdef USERPROG
-  /* 打印退出信息，仅针对用户进程，且不是halt */
- // LAB 2 DEBUG: 把打印退出信息挪回process_exit()
-  if (cur->pagedir != NULL && strcmp(cur->name, "main") != 0 && strcmp(cur->name, "idle") != 0) {
-    char proc_name[16];
-    strlcpy(proc_name, cur->name, sizeof(proc_name));
-    char *space = strchr(proc_name, ' ');
-    if (space) *space = '\0';
-    printf("%s: exit(%d)\n", proc_name, cur->exit_status);
-  } 
-    
-#endif
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
