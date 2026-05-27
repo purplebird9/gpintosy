@@ -45,7 +45,7 @@ setup_stack()
     - stack page: still eager-load. 
 - `page_fault()` in `exception.c` is now responsible for loading via SPT.
     
-- [ ] page reclamation in `process_exit()`. `process_exit()/munmap()/eviction` 负责根据 SPT 清理或写回。
+- [x] page reclamation in `process_exit()`. `process_exit()/munmap()/eviction` 负责根据 SPT 清理或写回。
 
 
 # 5.24
@@ -61,7 +61,23 @@ check: `process.c`的所有改动都写在`#ifdef VM`编译宏之内.应该不�
 **15:15-17:00**
 - Add swap table
 - Naive eviction.
-- [ ]accessed&dirty bit?  --- after a naive eviction implementation
-- [ ]eviction victim frame的去处, 当前是简化实现: 统一写到swap.
+- [x]accessed&dirty bit?  --- after a naive eviction implementation
+- [x]eviction victim frame的去处, 当前是简化实现: 统一写到swap.
+  - now: dirty || swap-backed -> swap; clean && file-backed -> discard.
 
+### 当前Aliasing 策略:
+kernel和process都用 USER_VA 作为物理内存访问入口
+
+**upage vs kpage**
+```text
+user VA upage  ──pagedir──> physical frame <──direct map── kernel VA kpage
+```
+
+- uaddr：任意用户虚拟地址，可以不页对齐。
+- upage：页对齐后的用户虚拟页起始地址。
+- kaddr：任意内核虚拟地址。
+- kpage：页对齐后的内核虚拟页起始地址，通常对应一个物理 frame。
+
+
+# 5.27
 

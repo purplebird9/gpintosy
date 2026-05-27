@@ -22,7 +22,7 @@ static struct lock frame_lock;           /**< Protects the GLOBAL frame_table. *
 
 static struct frame_entry *frame_evict (void);
 static struct frame_entry *frame_select_victim_random_locked (void);
-static bool frame_swap_out (struct frame_entry *victim);
+static bool frame_evict_page (struct frame_entry *victim);
 
 /** Initializes the global frame table.*/
 void
@@ -99,16 +99,7 @@ frame_evict (void)
   if (victim == NULL)
     return NULL;
 
-  // For now, always swap out victim.
-  /**TODO:
-   * if (page is mmap && dirty)
-        write back to mapped file;
-      else if (page is file-backed && !dirty)
-        discard frame, keep file metadata in SPT;
-      else
-        write page to swap;
-   */
-  if (!frame_swap_out (victim))
+  if (!frame_evict_page (victim))
     {
       victim->pinned = false;
       return NULL;
@@ -157,11 +148,19 @@ frame_select_victim_random_locked (void)
   NOT_REACHED ();
 }
 
-/** Writes VICTIM to swap and updates its owner's pagedir/SPT state. */
+/** Evicts VICTIM(discard/write to swap) and updates its owner's pagedir/SPT state.
+
+   Alias sol: Always use UPAGE, not KPAGE, as frame access path. 
+   Dirty bits are read only through the user virtual page---> no alias prob.
+
+   Dirty pages and pages whose only copy is already swap-backed must be written to swap;
+   Clean file-backed pages are discarded instead of swapped. */
 static bool
-frame_swap_out (struct frame_entry *victim)
+frame_evict_page (struct frame_entry *victim)
 {
   struct spt_entry *spte;
+  bool dirty;
+  bool must_swap;
   size_t slot;
 
   ASSERT (victim != NULL);
@@ -172,15 +171,29 @@ frame_swap_out (struct frame_entry *victim)
   if (spte == NULL)
     return false;
 
-  if (!swap_out (victim->kpage, &slot))
-    return false;
+  // dirty is read-only through USER.
+  dirty = victim->owner->pagedir != NULL
+          && pagedir_is_dirty (victim->owner->pagedir, victim->upage);
+  must_swap = spte->type == VM_PAGE_SWAP || dirty; // swap case: swap-backed || dirty
+
+  if (must_swap)
+    {
+      if (!swap_out (victim->kpage, &slot))
+        return false;
+    }
 
   if (victim->owner->pagedir != NULL)
     pagedir_clear_page (victim->owner->pagedir, victim->upage);
 
-  spte->type = VM_PAGE_SWAP;
+  if (must_swap)
+    {
+      spte->type = VM_PAGE_SWAP;
+      spte->swap_slot = slot;
+    }
+  else
+    spte->swap_slot = (size_t) -1;
+
   spte->state = VM_PAGE_NOT_LOADED;
-  spte->swap_slot = slot;
   spte->kpage = NULL;
 
   return true;
