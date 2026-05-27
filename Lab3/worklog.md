@@ -109,11 +109,125 @@ copy_in()
 ```
 
 **Check**
+
+FAIL tests/vm/page-parallel --- 逻辑问题
+
 ```text
-FAIL tests/vm/page-parallel
-FAIL tests/filesys/base/sm-seq-random
-FAIL tests/userprog/close-normal
-FAIL tests/userprog/bad-jump
+Putting 'page-parallel' into the file system...
+Putting 'child-linear' into the file system...
+Erasing ustar archive...
+Executing 'page-parallel':
+(page-parallel) begin
+(page-parallel) exec "child-linear"
+(page-parallel) exec "child-linear"
+(page-parallel) exec "child-linear"
+child-linear: exit(66)
+(page-parallel) exec "child-linear"
+(page-parallel) wait for child 0
+(page-parallel) wait for child 1
+child-linear: exit(66)
+child-linear: exit(66)
 ```
 
+FAIL tests/filesys/base/sm-seq-random ---old problem(?)
+
+```text
+Putting 'sm-seq-random' into the file system...
+Erasing ustar archive...
+Executing 'sm-seq-random':
+(sm-seq-random) begin
+(sm-seq-random) create "nibble"
+(sm-seq-random) open "nibble"
+(sm-seq-random) writing "nibble"
+(sm-seq-random) close "nibble"
+(sm-seq-random) open "nibble" for verification
+(sm-seq-random) verified contents of "nibble"
+(sm-seq-random) close "nibble"
+(sm-seq-random) end
+sm-seq-random: exit(0)
+Execution oExecution of 'sm-seq-random' complete.
+```
+
+FAIL tests/userprog/close-normal ---old problem!!
+```text
+Acceptable output:
+  (close-normal) begin
+  (close-normal) open "sample.txt"
+  (close-normal) close "sample.txt"
+  (close-normal) end
+  close-normal: exit(0)
+Differences in `diff -u' format:
+  (close-normal) begin
+  (close-normal) open "sample.txt"
+  (close-normal) close "sample.txt"
+  (close-normal) end
+- close-normal: exit(0)
++ close-normal: exit(0close-normal: exit(0)
+```
+
+FAIL tests/userprog/bad-jump ---old prob?
+
+```text
+Putting 'bad-jump' into the file system...
+Erasing ustar archive...
+Executing 'bad-jump':
+(bad-jump) begin
+Page fault at 0: not present error reading page in user context.
+bad-jump: exit(-1)
+EExecution of 'bad-jump' complete.
+Timer: 62 ticks
+Thread: 35 idle ticks, 25 kernel ticks, 2 user ticks
+hda2 (filesys): 57 reads, 148 writes
+hda3 (scratch): 71 reads, 2 writes
+hda4 (swap): 0 reads, 0 writes
+```
+
+**15:00-20:00**
 猜测: some synchronization problem.
+
+- page-parallel: upage is aligned ASSERTION fail. --> round upage instead of ASSERT.
+
+
+并发场景:
+线程 A: eviction 选中 victim frame
+线程 A: 释放 frame_lock，准备驱逐
+线程 B: victim 的 owner 退出，spt_destroy -> frame_free -> free(frame_entry)
+线程 A: 继续使用已经被 free 的 victim，frame->kpage 变成野值
+
+
+## Sync:
+对照doc修改同步设计.
+- [ ]eviction 在 swap_out() 之前没有先从 owner pagedir 取消映射，victim owner可能在 eviction期间继续修改该页。
+- [ ]page load的时候另一个进程不能interfere(e.g. evict).
+- [ ]缺少 per-frame / per-SPT entry 级别的同步设计.
+
+## Console Disorder:
+- fix `process_exit()`: child prinf "xxx: exit(n)" -> sema_up()唤醒父进程 -> parent printf:" Execution of 'xxx' complete."
+
+exit处不再出现紊乱, 但是执行过程中还是有格式紊乱.
+
+```diff
+  Differences in `diff -u' format:
+  (sm-seq-random) begin
+  (sm-seq-random) create "nibble"
+  (sm-seq-random) open "nibble"
+  (sm-seq-random) writing "nibble"
+  (sm-seq-random) close "nibble"
+  (sm-seq-random) open "nibble" for verification
+- (sm-seq-random) verified contents of "nibble"
++ (sm-seq-random) verifi(sm-seq-random) verified contents of "nibble"
+  (sm-seq-random) close "nibble"
+  (sm-seq-random) end
+```
+
+```diff
+Differences in `diff -u' format:
+- (sc-bad-arg) begin
++ ((sc-bad-arg) begin
+  sc-bad-arg: exit(-1)
+```
+
+
+TODO:
+1. Replacement Algorithm
+2. Fix Synchronization.
