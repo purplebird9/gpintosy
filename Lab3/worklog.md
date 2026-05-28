@@ -244,3 +244,13 @@ fix:
 - Solve design doc-B6: 
   - P evicts Q's frame->I/O(swap_out), very slow!->Q scheduled->Q shouldn't modify the frame!
   - 现在 eviction 会先把被驱逐页的 SPT 状态设为 VM_PAGE_EVICTING，立刻清掉 owner 的 PTE，阻止 Q 继续访问/修改该页，然后再做 swap I/O。Q 如果在这期间 fault 同一页，会在 spte->lock/cv 上等待，直到 eviction 完成。
+
+
+# 5.28
+**10:00-12:00**
+猜想: 
+1. syscall()期间没有保护user buffer, 导致putbuf()期间被____打断, 恢复后又从buffer开头重新输出.
+  - now: pins all pages covered by buffer during sys_read(), sys_write().
+  - this prevents the VM eviction path from moving or changing user buffer pages while the kernel is doing copy_in/copy_out or file/console I/O, which could corrupt output.
+2. 随机eviction placeholder导致的偶发紊乱?改成LRU?
+  

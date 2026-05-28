@@ -2,6 +2,7 @@
 #include <console.h>
 #include <debug.h>
 #include <round.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <syscall-nr.h>
@@ -16,6 +17,7 @@
 #include "userprog/pagedir.h"
 #include "userprog/process.h"
 #ifdef VM
+#include "vm/frame.h"
 #include "vm/spt.h"
 #endif
 
@@ -46,6 +48,11 @@ static struct file_descriptor *lookup_fd (int fd);
 static struct file *lookup_file (int fd);
 static int fd_allocate (struct file *file);
 static void fd_close (int fd);
+// LAB3A: protect user buffers from eviction during syscalls that read/write them
+#ifdef VM
+static void pin_user_buffer (const void *buffer, size_t size);
+static void unpin_user_buffer (const void *buffer, size_t size);
+#endif
 static bool sys_create (const char *file, unsigned initial_size);
 static bool sys_remove (const char *file);
 static int sys_open (const char *file);
@@ -128,6 +135,10 @@ check_user_buffer (const void *buffer, size_t size)
 
   if (size == 0)
     return;
+
+  // LAB3A: size 的合法性检查：确保 size加上起始地址后不发生溢出
+  if ((uintptr_t) uaddr + size - 1 < (uintptr_t) uaddr)
+    sys_exit (-1);
 
   check_user_vaddr (uaddr);
   check_user_vaddr (uaddr + size - 1);
@@ -438,11 +449,15 @@ sys_read (int fd, void *buffer, unsigned size)
   uint8_t *ubuffer = buffer;
   unsigned bytes_read = 0;
   uint8_t bounce[256];
+  int result;
 
   if (size == 0)
     return 0;
 
   check_user_buffer (buffer, size);
+#ifdef VM
+  pin_user_buffer (buffer, size); //LAB3A: pin during sys_read()
+#endif
 
   if (fd == 0)
     {
@@ -452,11 +467,15 @@ sys_read (int fd, void *buffer, unsigned size)
           if (!put_user (ubuffer + bytes_read, ch))
             sys_exit (-1);
         }
-      return (int) bytes_read;
+      result = (int) bytes_read;
+      goto done;
     }
 
   if (fd == 1)
-    return -1;
+    {
+      result = -1;
+      goto done;
+    }
 
   while (bytes_read < size)
     {
@@ -465,7 +484,10 @@ sys_read (int fd, void *buffer, unsigned size)
       int chunk_read;
 
       if (file == NULL)
-        return -1;
+        {
+          result = -1;
+          goto done;
+        }
 
       if (chunk > sizeof bounce)
         chunk = sizeof bounce;
@@ -484,7 +506,13 @@ sys_read (int fd, void *buffer, unsigned size)
         break;
     }
 
-  return (int) bytes_read;
+  result = (int) bytes_read;
+
+done:
+#ifdef VM
+  unpin_user_buffer (buffer, size);// LAB3A
+#endif
+  return result;
 }
 
 
@@ -495,11 +523,15 @@ sys_write (int fd, const void *buffer, unsigned size)
   const uint8_t *ubuffer = buffer;
   unsigned bytes_written = 0;
   uint8_t bounce[256];
+  int result;
 
   if (size == 0)
     return 0;
 
   check_user_buffer (buffer, size);
+#ifdef VM
+  pin_user_buffer (buffer, size); //LAB3A: pin during sys_write()
+#endif
 
   if (fd == 1)
     {
@@ -509,16 +541,23 @@ sys_write (int fd, const void *buffer, unsigned size)
       uint8_t *kbuffer = malloc (size);
 
       if (kbuffer == NULL)
-        return -1;
+        {
+          result = -1;
+          goto done;
+        }
 
       copy_in (kbuffer, ubuffer, size);
       putbuf ((char *) kbuffer, size);
       free (kbuffer);
-      return (int) size;
+      result = (int) size;
+      goto done;
     }
 
   if (fd == 0)
-    return -1;
+    {
+      result = -1;
+      goto done;
+    }
 
   while (bytes_written < size)
     {
@@ -527,7 +566,10 @@ sys_write (int fd, const void *buffer, unsigned size)
       int chunk_written;
 
       if (file == NULL)
-        return bytes_written == 0 ? -1 : (int) bytes_written;
+        {
+          result = bytes_written == 0 ? -1 : (int) bytes_written;
+          goto done;
+        }
 
       if (chunk > sizeof bounce)
         chunk = sizeof bounce;
@@ -547,7 +589,13 @@ sys_write (int fd, const void *buffer, unsigned size)
         break;
     }
 
-  return (int) bytes_written;
+  result = (int) bytes_written;
+
+done:
+#ifdef VM
+  unpin_user_buffer (buffer, size); //LAB3A
+#endif
+  return result;
 }
 
 
@@ -621,8 +669,64 @@ sys_wait (tid_t pid)
   return process_wait (pid);
 }
 
+/* LAB3A */
+#ifdef VM
+/* Pins every resident frame touched by BUFFER..BUFFER+SIZE so eviction cannot
+   move a syscall buffer while the kernel is copying it or using it for I/O. */
+static void
+pin_user_buffer (const void *buffer, size_t size)
+{
+  struct thread *cur = thread_current ();
+  const uint8_t *page;
+  const uint8_t *last;
 
+  if (size == 0)
+    return;
 
+  page = pg_round_down (buffer);
+  last = pg_round_down ((const uint8_t *) buffer + size - 1);
+
+  for (; page <= last; page += PGSIZE)
+    {
+      void *kpage;
+
+      check_user_vaddr (page);
+      kpage = pagedir_get_page (cur->pagedir, page);
+      if (kpage == NULL)
+        {
+          if (get_user (page) == -1)
+            sys_exit (-1);
+          kpage = pagedir_get_page (cur->pagedir, page);
+        }
+
+      if (kpage == NULL)
+        sys_exit (-1);
+
+      frame_pin (pg_round_down (kpage));
+    }
+}
+
+static void
+unpin_user_buffer (const void *buffer, size_t size)
+{
+  struct thread *cur = thread_current ();
+  const uint8_t *page;
+  const uint8_t *last;
+
+  if (size == 0)
+    return;
+
+  page = pg_round_down (buffer);
+  last = pg_round_down ((const uint8_t *) buffer + size - 1);
+
+  for (; page <= last; page += PGSIZE)
+    {
+      void *kpage = pagedir_get_page (cur->pagedir, page);
+      if (kpage != NULL)
+        frame_unpin (pg_round_down (kpage));
+    }
+}
+#endif
 
 /* Reads a byte at user virtual address UADDR.
    UADDR must be below PHYS_BASE.
