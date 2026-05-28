@@ -6,7 +6,6 @@
 #include "vm/frame.h"
 #include <debug.h>
 #include <list.h>
-#include <random.h>
 #include <string.h>
 #include "userprog/pagedir.h"
 #include "threads/malloc.h"
@@ -19,9 +18,10 @@
 
 static struct list frame_table;          /**< Global list of user frames. */
 static struct lock frame_lock;           /**< Protects the GLOBAL frame_table. */
+static struct list_elem *clock_hand;     /**< Next frame considered by clock. */
 
 static struct frame_entry *frame_evict (void);
-static struct frame_entry *frame_select_victim_random_locked (void);
+static struct frame_entry *frame_select_victim_clock_locked (void);
 static bool frame_evict_page (struct frame_entry *victim);
 
 /** Initializes the global frame table.*/
@@ -30,13 +30,14 @@ frame_table_init (void)
 {
   list_init (&frame_table);
   lock_init (&frame_lock);
+  clock_hand = NULL;
 }
 
 /** Allocates one user frame and records it in the frame table.
 
    FLAGS must include PAL_USER.  
-   Now eviction is not yet implemented, so this function 
-   returns NULL when palloc cannot find a free user frame.   */
+   If palloc cannot find a free user frame, eviction tries to reuse
+   an unpinned frame selected by the clock hand. */
 struct frame_entry *
 frame_allocate (enum palloc_flags flags, void *upage)
 {
@@ -51,7 +52,7 @@ frame_allocate (enum palloc_flags flags, void *upage)
   if (kpage == NULL) // no available frame
     {
       /* ~~~Eviction~~~ */
-      frame = frame_evict (); // TODO: optimize algorithm in frame_evict().
+      frame = frame_evict ();
       if (frame == NULL)
         return NULL;
 
@@ -85,14 +86,14 @@ frame_allocate (enum palloc_flags flags, void *upage)
 
 /** Evicts one frame and returns its frame table entry for reuse.
 
-   For now the algorithm is a random placeholder in frame_select_victim_random_locked() */
+   Victims are selected by a clock algorithm that approximates LRU. */
 static struct frame_entry *
 frame_evict (void)
 {
   struct frame_entry *victim;
 
   lock_acquire (&frame_lock);
-  victim = frame_select_victim_random_locked (); // EVICTION
+  victim = frame_select_victim_clock_locked (); // EVICTION
   if (victim == NULL)
     {
       lock_release (&frame_lock);
@@ -111,44 +112,53 @@ frame_evict (void)
   return victim;
 }
 
-/** Random placeholder alg.
+/** Selects an eviction victim with a clock algorithm.
 
    Caller must hold frame_lock.  
-   Pinned frames are skipped because they may be in the middle of disk or syscall buffer I/O. */
+   Pinned frames are skipped because they may be in the middle of disk or syscall buffer I/O.
+   Accessed frames get a second chance: clear their accessed bit and keep scanning. */
 static struct frame_entry *
-frame_select_victim_random_locked (void)
+frame_select_victim_clock_locked (void)
 {
   struct list_elem *e;
-  size_t unpinned_cnt = 0;
-  size_t target;
+  size_t frame_cnt;
+  size_t scanned;
 
   ASSERT (lock_held_by_current_thread (&frame_lock));
 
-  for (e = list_begin (&frame_table); e != list_end (&frame_table);
-       e = list_next (e))
-    {
-      struct frame_entry *frame = list_entry (e, struct frame_entry, elem);
-      if (!frame->pinned)
-        unpinned_cnt++;
-    }
-
-  if (unpinned_cnt == 0)
+  if (list_empty (&frame_table))
     return NULL;
 
-  target = random_ulong () % unpinned_cnt;
-  for (e = list_begin (&frame_table); e != list_end (&frame_table);
-       e = list_next (e))
+  if (clock_hand == NULL || clock_hand == list_end (&frame_table))
+    clock_hand = list_begin (&frame_table);
+
+  frame_cnt = list_size (&frame_table);
+  for (scanned = 0; scanned < frame_cnt * 2; scanned++)
     {
-      struct frame_entry *frame = list_entry (e, struct frame_entry, elem);
-      if (!frame->pinned)
+      struct frame_entry *frame;
+      void *upage;
+
+      e = clock_hand;
+      clock_hand = list_next (clock_hand);
+      if (clock_hand == list_end (&frame_table))
+        clock_hand = list_begin (&frame_table);
+
+      frame = list_entry (e, struct frame_entry, elem);
+      if (frame->pinned || frame->owner == NULL
+          || frame->owner->pagedir == NULL || frame->upage == NULL)
+        continue;
+
+      upage = pg_round_down (frame->upage);
+      if (pagedir_is_accessed (frame->owner->pagedir, upage))
         {
-          if (target == 0)
-            return frame;
-          target--;
+          pagedir_set_accessed (frame->owner->pagedir, upage, false);
+          continue;
         }
+
+      return frame;
     }
 
-  NOT_REACHED ();
+  return NULL;
 }
 
 /** Evicts VICTIM(discard/write to swap) and updates its owner's pagedir/SPT state.
@@ -289,7 +299,18 @@ frame_free (void *kpage)
       return;
     }
 
+  if (clock_hand == &frame->elem)
+    {
+      clock_hand = list_next (&frame->elem);
+      if (clock_hand == list_end (&frame_table))
+        clock_hand = list_begin (&frame_table);
+      if (clock_hand == &frame->elem)
+        clock_hand = NULL;
+    }
+
   list_remove (&frame->elem);
+  if (list_empty (&frame_table))
+    clock_hand = NULL;
   lock_release (&frame_lock);
 
   palloc_free_page (kpage);
