@@ -235,6 +235,10 @@ frame_evict_page (struct frame_entry *victim)
 
   spte->state = VM_PAGE_NOT_LOADED;
   spte->kpage = NULL;
+  // LAB3A Fix Race: clear owner,upage after eviciton
+  // So that frame_pin_user_page() will notice.
+  victim->owner = NULL;
+  victim->upage = NULL;
   //LAB3A-B6: page can now be faulted back from swap/file.
   cond_broadcast (&spte->cv, &spte->lock);
   lock_release (&spte->lock);
@@ -322,6 +326,7 @@ frame_free (void *kpage)
    Pin pages while the kernel is copying user buffers or doing disk
    I/O into a frame.  Evicting such a page in the middle of I/O can
    corrupt data or deadlock the VM path. */
+// LAB3A: deprecated.
 void
 frame_pin (void *kpage)
 {
@@ -344,6 +349,7 @@ frame_pin (void *kpage)
 }
 
 /** Allows KPAGE to be evicted again. */
+// LAB3A: deprecated.
 void
 frame_unpin (void *kpage)
 {
@@ -357,6 +363,67 @@ frame_unpin (void *kpage)
     {
       struct frame_entry *frame = list_entry (e, struct frame_entry, elem);
       if (frame->kpage == kpage)
+        {
+          frame->pinned = false;
+          break;
+        }
+    }
+  lock_release (&frame_lock);
+}
+
+/** Pins the frame currently owned by OWNER for UPAGE.
+
+   The lookup and pin update happen while holding frame_lock, so eviction
+   cannot select/reuse the frame between pagedir lookup and frame pinning. */
+bool
+frame_pin_user_page (struct thread *owner, const void *upage)
+{
+  struct list_elem *e;
+  void *round_upage;
+  bool pinned = false;
+
+  if (owner == NULL || upage == NULL)
+    return false;
+
+  round_upage = pg_round_down (upage);
+
+  /* critical section */
+  lock_acquire (&frame_lock);
+  for (e = list_begin (&frame_table); e != list_end (&frame_table);
+       e = list_next (e))
+    {
+      struct frame_entry *frame = list_entry (e, struct frame_entry, elem);
+      if (frame->owner == owner && frame->upage == round_upage) // lookup
+        {
+          frame->pinned = true;// pin
+          pinned = true;
+          break;
+        }
+    }
+  lock_release (&frame_lock);
+  /* critical section */
+
+  return pinned;
+}
+
+/** Unpins the frame currently owned by OWNER for UPAGE. */
+void
+frame_unpin_user_page (struct thread *owner, const void *upage)
+{
+  struct list_elem *e;
+  void *round_upage;
+
+  if (owner == NULL || upage == NULL)
+    return;
+
+  round_upage = pg_round_down (upage);
+
+  lock_acquire (&frame_lock);
+  for (e = list_begin (&frame_table); e != list_end (&frame_table);
+       e = list_next (e))
+    {
+      struct frame_entry *frame = list_entry (e, struct frame_entry, elem);
+      if (frame->owner == owner && frame->upage == round_upage)
         {
           frame->pinned = false;
           break;

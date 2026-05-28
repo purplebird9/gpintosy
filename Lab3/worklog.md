@@ -258,3 +258,11 @@ Solution:
   - this prevents the VM eviction path from moving or changing user buffer pages while the kernel is doing copy_in/copy_out or file/console I/O, which could corrupt output.
 
 Result:紊乱频率下降但是仍然存在, 可能还有一条path.
+
+**15:00-17:00**
+- 消除pin_user_buffer里get_page()和frame_pin()之间的竞态窗口:
+ frame_pin() ---> frame_pin_user_page(). 后者把lookup和pin用一个临界区包裹
+
+Result: passed!!!!
+
+- **隐患:** pin 仍然是 bool pinned，不是 pin_count。如果同一 frame 被嵌套 pin，两次 pin 后一次 unpin 可能提前解除保护。

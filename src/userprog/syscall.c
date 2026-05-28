@@ -690,19 +690,44 @@ pin_user_buffer (const void *buffer, size_t size)
     {
       void *kpage;
 
+      // check page valid.
       check_user_vaddr (page);
       kpage = pagedir_get_page (cur->pagedir, page);
       if (kpage == NULL)
         {
+          // if page is not loaded, trigger page fault by get_user(page).
           if (get_user (page) == -1)
             sys_exit (-1);
-          kpage = pagedir_get_page (cur->pagedir, page);
+          kpage = pagedir_get_page (cur->pagedir, page); // get frame A.
         }
 
       if (kpage == NULL)
         sys_exit (-1);
 
-      frame_pin (pg_round_down (kpage));
+      
+        /* Frame is not pinned yet. 
+          A Race Window May Occur Here!!!
+          e.g. frame A is evicted/reused. */
+        //frame_pin (pg_round_down (kpage));
+
+
+        // LAB3A Fix Race: use atomic frame_pin_user_page() instead of frame_pin().
+        // 如果eivction发生,清掉(owner,upage)或者被复用后(owner,upage)更新, frame_pin_user_page()会失败.
+        // 说明：刚才 pagedir_get_page() 看到的 resident 状态已经过期了!
+        if (!frame_pin_user_page (cur, page))
+        {
+          // 如果失败, frame_pin_user_page()再看一次pagedir_get_page().
+          // 如果 pagedir 还说它 resident，但 frame table 找不到，说明状态不一致，直接 sys_exit(-1)
+          if (pagedir_get_page (cur->pagedir, page) != NULL)
+            sys_exit (-1);
+
+          // 否则, pagedir 已经不 resident，说明刚才确实发生eviction了，于是再次 get_user(page) fault-in.
+          if (get_user (page) == -1)
+            sys_exit (-1);
+          // 再 pin 一次(递归).
+          if (!frame_pin_user_page (cur, page))
+            sys_exit (-1);
+        }
     }
 }
 
@@ -720,11 +745,7 @@ unpin_user_buffer (const void *buffer, size_t size)
   last = pg_round_down ((const uint8_t *) buffer + size - 1);
 
   for (; page <= last; page += PGSIZE)
-    {
-      void *kpage = pagedir_get_page (cur->pagedir, page);
-      if (kpage != NULL)
-        frame_unpin (pg_round_down (kpage));
-    }
+    frame_unpin_user_page (cur, page);
 }
 #endif
 

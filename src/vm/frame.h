@@ -27,7 +27,9 @@ struct frame_entry *frame_allocate (enum palloc_flags flags, void *upage);
 struct frame_entry *frame_lookup (void *kpage);
 void frame_free (void *kpage);
 
-void frame_pin (void *kpage);
-void frame_unpin (void *kpage);
+void frame_pin (void *kpage);// deprecated
+void frame_unpin (void *kpage);// deprecated
+bool frame_pin_user_page (struct thread *owner, const void *upage);
+void frame_unpin_user_page (struct thread *owner, const void *upage);
 
 #endif /**< vm/frame.h */
