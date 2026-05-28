@@ -52,7 +52,7 @@ setup_stack()
 **11:00-12:00**
 - Per-page resource free in `process_exit()`->`spt_destroy_entry()`.
 - [x] swap management.
-- [ ] eviction
+- [x] eviction
 
 check: `process.c`的所有改动都写在`#ifdef VM`编译宏之内.应该不会影响LAB2.
 
@@ -149,7 +149,7 @@ Execution oExecution of 'sm-seq-random' complete.
 ```
 
 FAIL tests/userprog/close-normal ---old problem!!
-```text
+```diff
 Acceptable output:
   (close-normal) begin
   (close-normal) open "sample.txt"
@@ -250,7 +250,11 @@ fix:
 **10:00-12:00**
 猜想: 
 1. syscall()期间没有保护user buffer, 导致putbuf()期间被____打断, 恢复后又从buffer开头重新输出.
-  - now: pins all pages covered by buffer during sys_read(), sys_write().
-  - this prevents the VM eviction path from moving or changing user buffer pages while the kernel is doing copy_in/copy_out or file/console I/O, which could corrupt output.
 2. 随机eviction placeholder导致的偶发紊乱?改成LRU?
-  
+
+Solution:
+1. Replacement Algorithm: clock.
+2. Pins all pages covered by buffer during sys_read(), sys_write().
+  - this prevents the VM eviction path from moving or changing user buffer pages while the kernel is doing copy_in/copy_out or file/console I/O, which could corrupt output.
+
+Result:紊乱频率下降但是仍然存在, 可能还有一条path.
