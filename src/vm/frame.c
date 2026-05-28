@@ -304,18 +304,42 @@ frame_free (void *kpage)
 void
 frame_pin (void *kpage)
 {
-  struct frame_entry *frame = frame_lookup (kpage);
+  struct list_elem *e;
 
-  if (frame != NULL)
-    frame->pinned = true;
+  ASSERT (kpage == NULL || pg_ofs (kpage) == 0);
+
+  lock_acquire (&frame_lock);
+  for (e = list_begin (&frame_table); e != list_end (&frame_table);
+       e = list_next (e))
+    {
+      struct frame_entry *frame = list_entry (e, struct frame_entry, elem);
+      if (frame->kpage == kpage)
+        {
+          frame->pinned = true;
+          break;
+        }
+    }
+  lock_release (&frame_lock);
 }
 
 /** Allows KPAGE to be evicted again. */
 void
 frame_unpin (void *kpage)
 {
-  struct frame_entry *frame = frame_lookup (kpage);
+  struct list_elem *e;
 
-  if (frame != NULL)
-    frame->pinned = false;
+  ASSERT (kpage == NULL || pg_ofs (kpage) == 0);
+
+  lock_acquire (&frame_lock);
+  for (e = list_begin (&frame_table); e != list_end (&frame_table);
+       e = list_next (e))
+    {
+      struct frame_entry *frame = list_entry (e, struct frame_entry, elem);
+      if (frame->kpage == kpage)
+        {
+          frame->pinned = false;
+          break;
+        }
+    }
+  lock_release (&frame_lock);
 }
