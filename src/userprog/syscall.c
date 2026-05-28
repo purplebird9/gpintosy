@@ -702,7 +702,9 @@ pin_user_buffer (const void *buffer, size_t size)
         }
 
       if (kpage == NULL)
-        sys_exit (-1);
+        {
+          sys_exit (-1);
+        }
 
       
         /* Frame is not pinned yet. 
@@ -711,23 +713,23 @@ pin_user_buffer (const void *buffer, size_t size)
         //frame_pin (pg_round_down (kpage));
 
 
-        // LAB3A Fix Race: use atomic frame_pin_user_page() instead of frame_pin().
-        // 如果eivction发生,清掉(owner,upage)或者被复用后(owner,upage)更新, frame_pin_user_page()会失败.
-        // 说明：刚才 pagedir_get_page() 看到的 resident 状态已经过期了!
-        if (!frame_pin_user_page (cur, page))
-        {
-          // 如果失败, frame_pin_user_page()再看一次pagedir_get_page().
-          // 如果 pagedir 还说它 resident，但 frame table 找不到，说明状态不一致，直接 sys_exit(-1)
-          if (pagedir_get_page (cur->pagedir, page) != NULL)
-            sys_exit (-1);
+      // LAB3A Fix Race: use atomic frame_pin_user_page() instead of frame_pin().
+      // 如果eivction发生,清掉(owner,upage)或者被复用后(owner,upage)更新, frame_pin_user_page()会失败.
+      // 说明：刚才 pagedir_get_page() 看到的 resident 状态已经过期了!
+      if (!frame_pin_user_page (cur, page))
+      {
+        // 如果失败, frame_pin_user_page()再看一次pagedir_get_page().
+        // 如果 pagedir 还说它 resident，但 frame table 找不到，说明状态不一致，直接 sys_exit(-1)
+        if (pagedir_get_page (cur->pagedir, page) != NULL)
+          sys_exit (-1);
 
-          // 否则, pagedir 已经不 resident，说明刚才确实发生eviction了，于是再次 get_user(page) fault-in.
-          if (get_user (page) == -1)
-            sys_exit (-1);
-          // 再 pin 一次(递归).
-          if (!frame_pin_user_page (cur, page))
-            sys_exit (-1);
-        }
+        // 否则, pagedir 已经不 resident，说明刚才确实发生eviction了，于是再次 get_user(page) fault-in.
+        if (get_user (page) == -1)
+          sys_exit (-1);
+        // 再 pin 一次(递归).
+        if (!frame_pin_user_page (cur, page))
+          sys_exit (-1);
+      }
     }
 }
 
