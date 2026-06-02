@@ -1,0 +1,24 @@
+docker run -it --rm --name pintos --mount type=bind,source=D:\Desktop\pintos,target=/home/PKUOS/pintos pkuflyingpig/pintos bash
+
+pintos --gdb -- run mytest
+
+docker exec -it pintos bash
+cd pintos/src/threads/build
+pintos-gdb kernel.o
+debugpintos
+
+
+杀死所有容器
+docker stop $(docker ps -q)
+
+运行单个测例
+make tests/threads/alarm-multiple.result 
+
+
+ripgrep:
+# 1. 安装 wget (如果没有的话)
+apt-get update && apt-get install -y wget
+# 2. 下载 ripgrep (以 13.0.0 版本为例，针对 amd64 架构)
+wget https://github.com/BurntSushi/ripgrep/releases/download/13.0.0/ripgrep_13.0.0_amd64.deb
+# 3. 安装
+dpkg -i ripgrep_13.0.0_amd64.deb
