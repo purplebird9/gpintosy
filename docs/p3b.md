@@ -22,7 +22,7 @@ FirstName LastName <email@domain.example>
 >invalid virtual address should cause the stack to be extended into
 >the page that faulted.
 
-
+whether a pagefault should cause a stack growth?
 
 ## Memory Mapped Files
 
