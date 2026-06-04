@@ -234,6 +234,10 @@ syscall_handler (struct intr_frame *f)
   uint32_t *esp = (uint32_t *) f->esp;
   uint32_t syscall_nr;
 
+  // LAB3B: Save reliable user_ esp before entering kernel.
+  struct thread *cur = thread_current ();
+  cur->user_esp = f->esp; // Record before check is safe because it only records ptr without dereferencing it.
+
   check_user_vaddr (esp);
   syscall_nr = read_u32 (esp);
 

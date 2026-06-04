@@ -710,6 +710,7 @@ init_thread (struct thread *t, const char *name, int priority)
   list_init (&t->fd_list);
   t->next_fd = 2;
   t->exec_file = NULL;
+  t->user_esp = NULL; //LAB3B: initialize user esp
   /* 每个进程的child list以及对应的共享状态 */
   list_init (&t->child_processes);
   t->child_info = NULL;
@@ -834,5 +835,4 @@ allocate_tid (void)
 /** Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
-
 

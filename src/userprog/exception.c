@@ -142,6 +142,7 @@ page_fault (struct intr_frame *f) // f:exception发生时 CPU 状态的快照。
   bool write;        /**< True: access was write, false: access was read. */
   bool user;         /**< True: access by user, false: access by kernel. */
   void *fault_addr;  /**< Fault address. */
+  struct thread *cur = thread_current ();
 
   /* Obtain faulting address, the virtual address that was
      accessed to cause the fault.  It may point to code or to
@@ -164,11 +165,14 @@ page_fault (struct intr_frame *f) // f:exception发生时 CPU 状态的快照。
   write = (f->error_code & PF_W) != 0;// write还是read导致的page fault, 判断权限
   user = (f->error_code & PF_U) != 0;//fault在user mode还是kernel mode
 
+  // LAB3B: if fault in user_mode, save esp.
+  if (user)
+    cur->user_esp = f->esp;
+
 /*LAB 3A: If the fault was a not-present page, try to load the page from disk.*/ 
 #ifdef VM
   if (not_present && is_user_vaddr (fault_addr))
     {
-      struct thread *cur = thread_current ();
       struct spt_entry *spte = cur->pagedir != NULL
                                ? spt_find (&cur->spt, fault_addr)
                                : NULL;

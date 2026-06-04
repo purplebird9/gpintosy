@@ -123,6 +123,7 @@ struct thread
     struct file *exec_file;             /**< Running executable, kept open. */
     struct list child_processes;        /**< LAB 2.4: Child process status list. */
     struct child_process_status *child_info; /**< LAB 2.4: Shared status with parent. */
+    void *user_esp;                     /**< LAB3B: Last saved user stack pointer. Distinguish from struct intr_frame::esp */
 #endif
 
 
