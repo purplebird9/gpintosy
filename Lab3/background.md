@@ -1,4 +1,4 @@
-# Pintos Lab 3 Outline
+# Pintos Lab3A Outline
 
 ## 1. Environment & Source Files
 *   **工作目录**：`vm/`。
@@ -168,42 +168,25 @@ Lazy.(not *reserved* for any page)
 ## Notes
 ![alt text](image.png)
 
-## Key Mechanisms
-
-### 4.1 缺页处理 (Page Fault Handler)
-当触发缺页异常时（修改 `userprog/exception.c` 中的 `page_fault()`）：
-1.  **定位**：在 SPT 中查找触发故障的虚拟页。
-2.  **验证**：检查访问是否合法（地址有效性、是否越界进入内核、是否试图写入只读页）。若非法，终止进程。
-3.  **获取帧**：从帧表获取一个物理帧（若无空闲则执行置换）。
-4.  **读取数据**：将数据从文件系统或交换分区载入帧，或清零（Zero-page）。
-5.  **更新页表**：修改硬件页表（PTE），指向物理帧。
-
-### 4.2 页面置换与驱逐 (Eviction)
-当物理内存不足时：
-1.  **选择牺牲者**：使用页面置换算法（利用 Accessed/Dirty 位）。
-2.  **移除引用**：从所有引用该帧的硬件页表中删除该映射。
-3.  **写回磁盘**：如果该页是“脏”的（Dirty），则必须将其写入交换分区或原始文件。
-4.  **重用**：将该帧分配给新页。
-
-### 4.3 交换管理 (Swap Management)
-*   **设备获取**：调用 `block_get_role(BLOCK_SWAP)`。
-*   **延迟分配 (Lazy Allocation)**：只有在发生置换且确实需要写入磁盘时才分配交换槽。
-*   **释放**：当数据被读回内存或进程结束时，立即释放交换槽。
-
-## 5. 硬件辅助与别名问题 (Accessed and Dirty Bits)
-*   **硬件更新**：CPU 自动设置 `Accessed`（访问过）和 `Dirty`（写入过）位。
-*   **软件重置**：操作系统负责定期将这些位清零（如在置换算法中）。
-*   **别名 (Aliases)**：
-    *   同一个物理帧可能有多个虚拟地址指向它（如用户虚拟地址和内核虚拟地址）。
-    *   **处理方法**：内核访问用户数据时，通过用户虚拟地址访问，或者同时检查/更新所有相关页表项。
-
-## 6. 设计建议与注意事项
-*   **数据结构选择**：
-    *   **哈希表** (lib/kernel/hash.h)：高效，适合 SPT。
-    *   **位图** (lib/kernel/bitmap.h)：适合管理固定大小的资源（如交换槽）。
-    *   **数组/链表**：简单，但可能存在性能问题。
-*   **非分页内存**：建议将这些管理数据结构存储在内核非分页内存中，确保指针始终有效。
-*   **Panic 情况**：如果交换分区也满了且无法驱逐页面，系统 Panic。
-
 ---
-**提示**：在编写设计文档时，请详细说明你将如何同步这些数据结构（加锁策略），以及你选择的具体置换算法（如 Clock 算法）。
+
+# Lab3B Outline
+
+## Stack Growth
+Whether a page_fault is a legal stack growth:
+```c
+fault_addr < PHYS_BASE
+&& fault_addr >= user_esp - 32
+&& fault_addr >= PHYS_BASE - STACK_LIMIT
+```
+
+- Distinguish stack accesses. Allocate additional pages only if they "appear" to be stack accesses.
+- Obtain the current value of user program's stack ptr. `esp` in `struct intr_frame`, in`syscall_handler` and `page_fault()`
+- Limit stack size 8MB
+- First stack page not loaded lazily
+- Stack pages ARE eviction candidates, written to SWAP.
+
+\* `PHYS_BASE`:  Pintos 里用户虚拟地址空间和内核虚拟地址空间的分界线.
+```c
+#define PHYS_BASE ((void *) 0xc0000000)
+```

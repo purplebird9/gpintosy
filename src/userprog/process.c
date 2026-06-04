@@ -521,7 +521,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
   if (t->pagedir == NULL) 
     goto done;
 
-    /* lAB3A: init SPT (& error check) after load() creates pagedir. */
+    /* LAB3A: init SPT (& error check) after load() creates pagedir. */
 #ifdef VM
   if (!spt_init (&t->spt))
     {
@@ -798,16 +798,21 @@ setup_stack (void **esp, const char *cmdline)
   uint8_t *sp;
   int i;
 
-  // LAB3A: new allocator and record: stack's upage = PHYS_BASE-4096 (top of user VM).
+/* LAB3A: new allocator and record: stack's upage = PHYS_BASE-4096 (top of user VM).
+   LAB3B: Stack page still eager-loaded. */
+ 
+  // 1. Allocate a frame for the first stack page immediately.
   kpage = process_alloc_user_page (PAL_USER | PAL_ZERO,
                                    ((uint8_t *) PHYS_BASE) - PGSIZE); 
   if (kpage != NULL) 
     {
+      // 2. Install to page table.
       success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
       if (success)
         {
 #ifdef VM
           /* LAB3A: insert a VM_PAGE_ZERO SPT entry after setup_stack() installs the stack page*/
+          // 3. Record the page in SPT.
           success = process_spt_insert (((uint8_t *) PHYS_BASE) - PGSIZE,
                                          true, VM_PAGE_ZERO, NULL, 0, 0,
                                          PGSIZE, kpage);
