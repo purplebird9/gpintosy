@@ -33,7 +33,8 @@ static bool vm_load_page (struct spt_entry *spte);
 #define STACK_MAX_BYTES (8 * 1024 * 1024) /**< Absolute stack limit: 8MB */
 static bool seems_like_stack_access (const void *fault_addr,
                                      const void *esp);
-static bool grow_stack (void *upage);#endif
+static bool grow_stack (void *upage);
+#endif
 
 /** Registers handlers for interrupts that can be caused by user
    programs.
