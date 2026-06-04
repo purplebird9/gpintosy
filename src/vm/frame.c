@@ -7,7 +7,9 @@
 #include <debug.h>
 #include <list.h>
 #include <string.h>
+#include "filesys/file.h"
 #include "userprog/pagedir.h"
+#include "userprog/syscall.h"
 #include "threads/malloc.h"
 #include "threads/palloc.h"
 #include "threads/synch.h"
@@ -212,12 +214,20 @@ frame_evict_page (struct frame_entry *victim)
   // LAB3B: also swap case: zero page(new stack page)
   must_swap = spte->type == VM_PAGE_SWAP
               || spte->type == VM_PAGE_ZERO
-              || dirty;
+              || (dirty && spte->type != VM_PAGE_MMAP);// LAB3B: dirty mmap page write back to file.
 
   spte->state = VM_PAGE_EVICTING; //LAB3A-B6: faulting threads must wait.
   if (victim->owner->pagedir != NULL)
     //LAB3A-B6: stop owner from writing the frame during eviction.
     pagedir_clear_page (victim->owner->pagedir, upage);
+
+  // LAB3B: If mmap page is written, write back to file.
+  if (dirty && spte->type == VM_PAGE_MMAP)
+    {
+      lock_acquire (&filesys_lock);
+      file_write_at (spte->file, victim->kpage, spte->read_bytes, spte->ofs);
+      lock_release (&filesys_lock);
+    }
 
   if (must_swap)
     {
