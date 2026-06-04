@@ -124,6 +124,22 @@ syscall_close_all_files (void)
     }
 }
 
+// LAB3B: Implicitly unmap all mmap files in mmap-list, called in process_exit().
+#ifdef VM
+void
+syscall_munmap_all (void)
+{
+  struct thread *cur = thread_current ();
+
+  while (!list_empty (&cur->mmap_list))
+    {
+      struct mmap_mapping *mapping =
+        list_entry (list_front (&cur->mmap_list), struct mmap_mapping, elem);
+      sys_munmap (mapping->md);
+    }
+}
+#endif
+
 
 /* 检查用户虚拟地址：验证地址是否合法且已映射，不合法则退出进程 */
 static void

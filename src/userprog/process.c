@@ -344,6 +344,12 @@ process_exit (void)
   uint32_t *pd;
   struct list_elem *e;
 
+/** LAB3B: Implicitly unmap all in process_exit().
+  mmap pages must be written back before files are closed. */ 
+#ifdef VM
+  syscall_munmap_all ();
+#endif
+
 // LAB 2.4: 退出时关闭所有打开文件
   lock_acquire (&filesys_lock);
   syscall_close_all_files ();
@@ -1010,7 +1016,7 @@ process_spt_insert (void *upage, bool writable, enum vm_page_type type,
   spte->zero_bytes = zero_bytes;
   spte->swap_slot = (size_t) -1;
   spte->kpage = kpage;
-  spte->mapid = -1;
+  spte->md = -1;
   //LAB3A-B6: per-page wait channel for loading/eviction.
   lock_init (&spte->lock);
   cond_init (&spte->cv);
@@ -1024,5 +1030,4 @@ process_spt_insert (void *upage, bool writable, enum vm_page_type type,
   return true;
 }
 #endif
-
 
