@@ -9,6 +9,7 @@
 /* LAB3A starts */
 #include "userprog/pagedir.h"
 #include "filesys/file.h"
+#include "threads/malloc.h"
 #include "threads/vaddr.h"
 #include <string.h>
 #ifdef VM
@@ -24,10 +25,15 @@ static long long page_fault_cnt;
 static void kill (struct intr_frame *);
 static void page_fault (struct intr_frame *);
 
-//LAB3A
 #ifdef VM
+// LAB3A
 static bool vm_load_page (struct spt_entry *spte);
-#endif
+
+//LAB3B
+#define STACK_MAX_BYTES (8 * 1024 * 1024) /**< Absolute stack limit: 8MB */
+static bool seems_like_stack_access (const void *fault_addr,
+                                     const void *esp);
+static bool grow_stack (void *upage);#endif
 
 /** Registers handlers for interrupts that can be caused by user
    programs.
@@ -169,7 +175,7 @@ page_fault (struct intr_frame *f) // f:exception发生时 CPU 状态的快照。
   if (user)
     cur->user_esp = f->esp;
 
-/*LAB 3A: If the fault was a not-present page, try to load the page from disk.*/ 
+/*LAB3A: If the fault was a not-present page, try to load the page from disk.*/ 
 #ifdef VM
   if (not_present && is_user_vaddr (fault_addr))
     {
@@ -180,7 +186,16 @@ page_fault (struct intr_frame *f) // f:exception发生时 CPU 状态的快照。
       // Call vm_load_page().                     
       if (spte != NULL && (!write || spte->writable) && vm_load_page (spte))
         return;
-    }
+
+	      // LAB3B: if spte == NULL, distinguish if fault_addr is a stack access.
+	      if (spte == NULL
+	          && seems_like_stack_access (fault_addr, cur->user_esp))
+	        {
+	          // If yes, grow stack by allocating a new page and mapping it to fault_addr.
+	          if (grow_stack (pg_round_down (fault_addr)))
+	            return;
+	        }
+	    }
 #endif
 /* LAB3A: if no successful load, fall through to old code.*/
 
@@ -206,6 +221,7 @@ page_fault (struct intr_frame *f) // f:exception发生时 CPU 状态的快照。
 }
 
 #ifdef VM
+
 /** LAB3A: Loads one SPT entry into memory and installs it in the page table. */
 static bool
 vm_load_page (struct spt_entry *spte)
@@ -335,4 +351,81 @@ vm_load_page (struct spt_entry *spte)
   frame_unpin (kpage);
   return true;
 }
+
+/** LAB3B Helpers */
+
+/** LAB3B: The heuristic to distinguish if fault_addr seems like access to a growing stack.
+
+   PUSH may fault 4 bytes below ESP, and PUSHA may fault 32 bytes below ESP.
+   The absolute limit 8MB keeps buggy programs from growing the stack forever. */
+static bool
+seems_like_stack_access (const void *fault_addr, const void *esp)
+{
+  uintptr_t fault = (uintptr_t) fault_addr;
+  uintptr_t stack_pointer = (uintptr_t) esp;
+  uintptr_t stack_bottom = (uintptr_t) PHYS_BASE - STACK_MAX_BYTES;
+
+  if (fault_addr == NULL || esp == NULL)
+    return false;
+  if (!is_user_vaddr (fault_addr))
+    return false;
+  if (fault < stack_bottom) // if addr is beyond stack limit
+    return false;
+
+  return fault >= stack_pointer - 32;
+}
+
+
+/** LAB3B: Stack Growth: adds one demand-zero stack page and loads it immediately. */
+static bool
+grow_stack (void *upage)
+{
+  struct thread *cur = thread_current ();
+  struct spt_entry *spte;
+
+  
+  if (upage == NULL || !is_user_vaddr (upage) || pg_ofs (upage) != 0)
+    return false;
+  // The new page should be below the absolute stack limit.
+  if ((uintptr_t) upage < (uintptr_t) PHYS_BASE - STACK_MAX_BYTES)
+    return false;
+  // Don't use the page as stack page if it already exists in SPT.
+  if (spt_find (&cur->spt, upage) != NULL)
+    return false;
+
+  // Allocate a new SPT entry with type VM_PAGE_ZERO, writable, and not loaded.
+  spte = malloc (sizeof *spte);
+  if (spte == NULL)
+    return false;
+  spte->upage = upage;
+  spte->writable = true;
+  spte->type = VM_PAGE_ZERO;
+  spte->state = VM_PAGE_NOT_LOADED;
+  spte->file = NULL;
+  spte->ofs = 0;
+  spte->read_bytes = 0;
+  spte->zero_bytes = PGSIZE;
+  spte->swap_slot = (size_t) -1;
+  spte->kpage = NULL;
+  spte->mapid = -1;
+  lock_init (&spte->lock);
+  cond_init (&spte->cv);
+
+  if (!spt_insert (&cur->spt, spte))
+    {
+      free (spte);
+      return false;
+    }
+
+  // Load immediately
+  if (!vm_load_page (spte))
+    {
+      spt_delete (&cur->spt, upage);
+      free (spte);
+      return false;
+    }
+
+  return true;
+}
+
 #endif
