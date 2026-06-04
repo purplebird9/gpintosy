@@ -144,6 +144,13 @@ frame_select_victim_clock_locked (void)
         clock_hand = list_begin (&frame_table);
 
       frame = list_entry (e, struct frame_entry, elem);
+
+      // Skip pinned frames
+      // LAB3B: zero pages are not skipped, so Stack Pages are candidates.
+
+      // no owner: does not belong to any process, just evicted.
+      // owner has no pagedir: process is exiting, so its pagedir is already destroyed.
+      // no upage: frame has onwer process but not mapped to any user page, just evicted or being initialized.
       if (frame->pinned || frame->owner == NULL
           || frame->owner->pagedir == NULL || frame->upage == NULL)
         continue;
@@ -198,15 +205,19 @@ frame_evict_page (struct frame_entry *victim)
       return false;
     }
 
+  // dirty is read-only through USER.
+  dirty = victim->owner->pagedir != NULL
+          && pagedir_is_dirty (victim->owner->pagedir, upage);
+  // swap case: swap_backed || dirty
+  // LAB3B: also swap case: zero page(new stack page)
+  must_swap = spte->type == VM_PAGE_SWAP
+              || spte->type == VM_PAGE_ZERO
+              || dirty;
+
   spte->state = VM_PAGE_EVICTING; //LAB3A-B6: faulting threads must wait.
   if (victim->owner->pagedir != NULL)
     //LAB3A-B6: stop owner from writing the frame during eviction.
     pagedir_clear_page (victim->owner->pagedir, upage);
-
-  // dirty is read-only through USER.
-  dirty = victim->owner->pagedir != NULL
-          && pagedir_is_dirty (victim->owner->pagedir, upage);
-  must_swap = spte->type == VM_PAGE_SWAP || dirty; // swap case: swap-backed || dirty
 
   if (must_swap)
     {

@@ -266,3 +266,16 @@ Result:紊乱频率下降但是仍然存在, 可能还有一条path.
 Result: passed!!!!
 
 - **隐患:** pin 仍然是 bool pinned，不是 pin_count。如果同一 frame 被嵌套 pin，两次 pin 后一次 unpin 可能提前解除保护。
+
+---
+ 
+
+# 6.4
+**10:00-12:00**
+Implement stack growth
+- [x] First stack page not loaded lazily
+- [x] Obtain the current value of user program's stack ptr. `esp` in `struct intr_frame`, in`syscall_handler` and `page_fault()`
+- [x] Distinguish stack accesses. Allocate additional pages only if they "appear" to be stack accesses.
+- [x] Limit stack size 8MB
+- [x] Stack pages ARE eviction candidates, written to SWAP.
+
