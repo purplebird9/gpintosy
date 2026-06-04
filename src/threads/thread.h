@@ -132,9 +132,11 @@ struct thread
    int exit_status;                    /**< Exit status for user process. */
 #endif
 
-// LAB3A 
+// LAB3A, LAB3B
 #ifdef VM
    struct hash spt;                       /**< Supplemental page table. */
+   struct list mmap_list;                 /**< Memory-mapped file regions. */
+   int next_md;                        /**< Next mmap id >~< */
 #endif
 
    /* Owned by thread.c. */

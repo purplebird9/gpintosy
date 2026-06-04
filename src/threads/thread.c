@@ -717,6 +717,12 @@ init_thread (struct thread *t, const char *name, int priority)
   t->exit_status = -1;
 #endif
 
+// LAB3B : initialize mmap list and mapid
+#ifdef VM
+  list_init (&t->mmap_list);
+  t->next_md = 1;
+#endif
+
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
   intr_set_level (old_level);
@@ -835,4 +841,3 @@ allocate_tid (void)
 /** Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
-
