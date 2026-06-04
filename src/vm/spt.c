@@ -25,10 +25,7 @@ spt_init (struct hash *spt)
   return hash_init (spt, spt_hash, spt_less, NULL);
 }
 
-/** Destroys SPT and frees every entry in spt_destroy_entry().
-
-   Also the place to release per-page resources:
-   resident frames, swap slots, and TODO: mmap write-back state. */
+/** Destroys SPT and frees every entry in spt_destroy_entry(). */
 void
 spt_destroy (struct hash *spt)
 {
