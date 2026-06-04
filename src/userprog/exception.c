@@ -409,7 +409,7 @@ grow_stack (void *upage)
   spte->zero_bytes = PGSIZE;
   spte->swap_slot = (size_t) -1;
   spte->kpage = NULL;
-  spte->mapid = -1;
+  spte->md = -1;
   lock_init (&spte->lock);
   cond_init (&spte->cv);
 

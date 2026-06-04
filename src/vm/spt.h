@@ -59,7 +59,7 @@ struct spt_entry
     size_t swap_slot;          /**< Swap slot index for VM_PAGE_SWAP. */
     void *kpage;               /**< Kernel VA of resident user frame. */
 
-    int mapid;                 /**< mmap id; -1 for non-mmap pages. */
+    int md;                 /**< mmap id; -1 for non-mmap pages. */
     struct lock lock;          /**< LAB3A-B6: protects page state transitions. */
     struct condition cv;       /**< LAB3A-B6: wait for loading/eviction finish. */
     struct hash_elem elem;     /**< Element in the per-process SPT hash. */
