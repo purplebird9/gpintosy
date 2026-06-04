@@ -279,3 +279,71 @@ Implement stack growth
 - [x] Limit stack size 8MB
 - [x] Stack pages ARE eviction candidates, written to SWAP.
 
+check:
+```text
+FAIL tests/vm/pt-grow-stk-sc
+FAIL tests/vm/page-merge-stk
+```
+
+**13:00-15:00**
+- per-thread mmap list.
+
+Note:
+`init_thread()`:初始化一个新的 struct thread 里的字段.
+```c
+list_init (&t->mmap_list);
+t->next_md = 1;
+```
+(spt也是per-thread状态, 但是spt_init放在process.c的load()里, 因为它只对用户进程有意义.)
+
+`init.c`:初始化 kernel 启动时的全局模块,比如
+```c
+frame_table_init ();
+swap_table_init ();
+filesys_init ();
+```
+- mmap load: lazy
+- mmap eviction: write back to file
+
+**18:30-19:30**
+- syscall: mmap, munmap
+  - mmap: find open base_file->create separate mapping_file->new struct mapping->insert to SPT->add to thread::mmap_list
+  - munmap:remove from SPT->clear page table-> write back->free frame->remove mmap list_elem->close mapping file->free struct mapping.
+- implicit unmap all in process_exit().
+
+Note:
+```markdown
+ `mmap_insert_page()` 做的是 **lazy mapping**，不是立刻把文件内容装进内存。
+
+`mmap` 成功时只需要告诉内核：
+
+> “这个用户虚拟页 `upage` 将来如果被访问，它应该从 `file + ofs` 这个位置读 `read_bytes`，剩下 `zero_bytes` 补 0，并且它属于 mmap mapping `md`。”
+
+此时没有分配 frame，也没有实际读文件，所以 **page table 里不应该建立映射**。真正的 page table 映射是在第一次访问该 mmap 地址、发生 page fault 时建立的：
+
+1. 用户访问 `addr`
+2. CPU 查 page table，发现没有 present 映射
+3. 触发 page fault
+4. `page_fault()` 查 SPT，找到 `VM_PAGE_MMAP`
+5. `vm_load_page()` 分配 frame、读文件、补零
+6. `pagedir_set_page()` 把 `upage -> kpage` 装进 page table
+
+所以分工是：
+
+- `mmap_insert_page()`：登记“未来怎么加载这个页”
+- `page_fault()` / `vm_load_page()`：真正加载 page，并更新 page table
+- eviction：必要时清 page table，并根据类型决定 swap / write back / discard
+- `munmap()`：删除 SPT entry，必要时写回 dirty page
+
+如果 `mmap_insert_page()` 现在就操作 page table，就变成 eager loading 了：必须分配 frame、读文件、建立映射。这和 Pintos 对 mmap 的要求不符，因为 mmaped regions 应该是 lazy-loaded。
+```
+
+make check: 2/113
+```text
+FAIL tests/vm/pt-grow-stk-sc
+FAIL tests/vm/page-merge-stk
+```
+
+
+
+

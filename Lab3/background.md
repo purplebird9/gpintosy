@@ -190,3 +190,38 @@ fault_addr < PHYS_BASE
 ```c
 #define PHYS_BASE ((void *) 0xc0000000)
 ```
+
+
+## MMAP
+linux syscall:
+```c
+void *mmap(void addr[.length], size_t length, int prot, int flags, int fd, off_t offset);
+int munmap(void addr[.length], size_t length);
+```
+
+pintos syscall:
+```c
+mapid_t mmap (int fd, void *addr)
+void munmap (mapid_t mapping)
+```
+
+**You need a table of file mappings to track which files are mapped into which pages.**
+
+mmap: 
+- Map open file(fd) -> CONSECUTIVE VM.
+- mmaped regions: lazy-loaded, file-backed, write back to file when evicted.
+- file结尾的page多出来的bytes: set to zero when paged in; discard when written back. 
+- Success: return "map id"
+- Fail: return -1
+    - file fd length == 0
+    - addr not aligned
+    - map range overlaps existing mapped pages(other mmap pages, stack pages, segments in executable load.)
+    - addr==0
+    - fd==0 || fd==1
+
+munmap:
+- map id returned by a `mmap` in the same process
+- Implicitly unmap all in process_exit().
+- If written, write back to file.
+- Closing/Removing a file does not delete mapping state.
+- 1 file --map--> 2 processes: does not need to keep data consistent!
