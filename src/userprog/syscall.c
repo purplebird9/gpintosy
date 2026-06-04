@@ -789,6 +789,7 @@ lookup_mapping (int md)
 }
 
 // Insert a VM_PAGE_MMAP entry to SPT.
+// MMAP REGION LAZY-LOADING! so only record info in SPT without loading page, until page fault.
 static bool
 mmap_insert_page (struct file *file, int md, void *upage, off_t ofs,
                   uint32_t read_bytes, uint32_t zero_bytes)
