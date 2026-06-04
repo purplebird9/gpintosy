@@ -17,7 +17,7 @@
 #include "vm/spt.h"
 #include "vm/swap.h"
 #endif
-/* lAB3A ends */
+/* LAB3A ends */
 
 /** Number of page faults processed. */
 static long long page_fault_cnt;
@@ -274,7 +274,8 @@ vm_load_page (struct spt_entry *spte)
   /* Load Start. */
   switch (type)
     {
-    case VM_PAGE_FILE: // 从文件加载
+    case VM_PAGE_FILE: 
+    case VM_PAGE_MMAP: // 2 cases both load from file.
       lock_acquire (&filesys_lock); // filesystem lock
       if (file_read_at (file, kpage, read_bytes, ofs) != (int) read_bytes)
         {
