@@ -26,13 +26,26 @@
 /* 全局 filesys_lock，把文件系统访问串行化 */
 struct lock filesys_lock;
 
-// LAB 2.4: fd结构体
+// LAB 2.4: struct fd
 struct file_descriptor
   {
     int fd;
     struct file *file;
     struct list_elem elem;
   };
+
+
+// LAB3B: struct mmap mapping
+#ifdef VM
+struct mmap_mapping
+  {
+    int md;
+    void *addr;
+    size_t length;
+    struct file *file;
+    struct list_elem elem;
+  };
+#endif
 
 /* prototypes */
 static void syscall_handler (struct intr_frame *);
@@ -48,10 +61,19 @@ static struct file_descriptor *lookup_fd (int fd);
 static struct file *lookup_file (int fd);
 static int fd_allocate (struct file *file);
 static void fd_close (int fd);
-// LAB3A: protect user buffers from eviction during syscalls that read/write them
 #ifdef VM
+// LAB3A: protect user buffers from eviction during syscalls that read/write them
 static void pin_user_buffer (const void *buffer, size_t size);
 static void unpin_user_buffer (const void *buffer, size_t size);
+// LAB3B: MMAP syscalls
+static int sys_mmap (int fd, void *addr);
+static void sys_munmap (int md);
+// LAB3B: helpers for mmap
+static struct mmap_mapping *lookup_mapping (int md);
+static bool mmap_insert_page (struct file *file, int md, void *upage,
+                              off_t ofs, uint32_t read_bytes,
+                              uint32_t zero_bytes);
+static void mmap_remove_page (struct spt_entry *spte);
 #endif
 static bool sys_create (const char *file, unsigned initial_size);
 static bool sys_remove (const char *file);
@@ -299,6 +321,18 @@ syscall_handler (struct intr_frame *f)
     case SYS_CLOSE:
       sys_close ((int) read_u32 (esp + 1));
       break;
+
+/* LAB3B: MMAP syscalls */
+#ifdef VM
+    case SYS_MMAP:
+      f->eax = sys_mmap ((int) read_u32 (esp + 1),
+                         (void *) read_u32 (esp + 2));
+      break;
+
+    case SYS_MUNMAP:
+      sys_munmap ((int) read_u32 (esp + 1));
+      break;
+#endif
 
     default:
       sys_exit (-1);
@@ -601,6 +635,233 @@ done:
 #endif
   return result;
 }
+
+#ifdef VM
+/** LAB3B */
+/** SYS_MMAP: map open file fd to start address addr in user VM.*/ 
+static int
+sys_mmap (int fd, void *addr)
+{
+  struct thread *cur = thread_current ();
+  struct file *base_file;
+  struct file *mapping_file;
+  struct mmap_mapping *mapping;
+  off_t length;
+  size_t offset;
+  int md;
+
+  // Fail case: fd==0/1;addr invalid/not page_aligned; addr==0; overlap.
+  if (fd == 0 || fd == 1 || addr == NULL || addr==0 || pg_ofs (addr) != 0)
+    return -1;
+  // is_user_vaddr: addr<PHYS_BASE.
+  if (!is_user_vaddr (addr))
+    return -1;
+
+  base_file = lookup_file (fd);
+  // Fail case: fd invalid
+  if (base_file == NULL)
+    return -1;
+
+  lock_acquire (&filesys_lock);
+  length = file_length (base_file);
+
+  // file_reopen: obtain a separarate file reference for its mapping
+  // so that closing/removing a file doesn't affect its mapping until munmap.
+  mapping_file = length > 0 ? file_reopen (base_file) : NULL; 
+  lock_release (&filesys_lock);
+
+  // Fail case: file length == 0 or file_reopen failed
+  if (length <= 0 || mapping_file == NULL)
+    return -1;
+
+  // span pages
+  for (offset = 0; offset < (size_t) length; offset += PGSIZE)
+    {
+      void *upage = (uint8_t *) addr + offset;
+
+      if (!is_user_vaddr (upage)
+          || !is_user_vaddr ((uint8_t *) upage + PGSIZE - 1)
+          || spt_find (&cur->spt, upage) != NULL // fail case: overlap
+          || pagedir_get_page (cur->pagedir, upage) != NULL)// fail case: overlap
+        {
+          file_close (mapping_file);
+          return -1;
+        }
+    }
+
+  // Record mapping info in struct mmap_mapping and insert it into process's mmap_list.
+  mapping = malloc (sizeof *mapping);
+  if (mapping == NULL)
+    {
+      file_close (mapping_file);
+      return -1;
+    }
+
+  // Increment map id.
+  md = cur->next_md++;
+
+  // Calculate zero bytes for last page.
+  for (offset = 0; offset < (size_t) length; offset += PGSIZE)
+    {
+      uint32_t page_read_bytes =
+        (size_t) length - offset < PGSIZE ? (size_t) length - offset : PGSIZE;
+      uint32_t page_zero_bytes = PGSIZE - page_read_bytes;
+
+      // Zero filling, done in mmap_insert_page().
+      if (!mmap_insert_page (mapping_file, md, (uint8_t *) addr + offset,
+                             offset, page_read_bytes, page_zero_bytes))
+        {
+          // sys_munmap needs a complete struct mmap_mapping first.
+          mapping->md = md;
+          mapping->addr = addr;
+          mapping->length = offset;
+          mapping->file = mapping_file;
+          list_push_back (&cur->mmap_list, &mapping->elem);
+          sys_munmap (md);
+          return -1;
+        }
+    }
+
+  mapping->md = md;
+  mapping->addr = addr;
+  mapping->length = length;
+  mapping->file = mapping_file;
+  list_push_back (&cur->mmap_list, &mapping->elem);
+  return md;
+}
+
+/** SYS_MUNMAP */ 
+static void
+sys_munmap (int md)
+{
+  struct mmap_mapping *mapping = lookup_mapping (md);
+  size_t offset;
+
+  if (mapping == NULL)
+    return;
+
+  // page by page
+  for (offset = 0; offset < mapping->length; offset += PGSIZE)
+    {
+      struct spt_entry *spte =
+        spt_find (&thread_current ()->spt, (uint8_t *) mapping->addr + offset);
+
+      if (spte != NULL && spte->md == md)
+        mmap_remove_page (spte);
+    }
+
+  list_remove (&mapping->elem);
+  file_close (mapping->file);
+  free (mapping);
+}
+
+// Returns the corresponding struct mmap_mapping of a map_id.
+static struct mmap_mapping *
+lookup_mapping (int md)
+{
+  struct thread *cur = thread_current ();
+  struct list_elem *e;
+
+  for (e = list_begin (&cur->mmap_list); e != list_end (&cur->mmap_list);
+       e = list_next (e))
+    {
+      struct mmap_mapping *mapping = list_entry (e, struct mmap_mapping, elem);
+      if (mapping->md == md)
+        return mapping;
+    }
+  return NULL;
+}
+
+// Insert a VM_PAGE_MMAP entry to SPT.
+static bool
+mmap_insert_page (struct file *file, int md, void *upage, off_t ofs,
+                  uint32_t read_bytes, uint32_t zero_bytes)
+{
+  struct spt_entry *spte;
+
+  ASSERT (pg_ofs (upage) == 0);
+  ASSERT (read_bytes + zero_bytes == PGSIZE);
+
+  spte = malloc (sizeof *spte);
+  if (spte == NULL)
+    return false;
+
+  spte->upage = upage;
+  spte->writable = true;
+  spte->type = VM_PAGE_MMAP;
+  spte->state = VM_PAGE_NOT_LOADED;
+  spte->file = file;
+  spte->ofs = ofs;
+  spte->read_bytes = read_bytes;
+  spte->zero_bytes = zero_bytes;
+  spte->swap_slot = (size_t) -1;
+  spte->kpage = NULL;
+  spte->md = md;
+  lock_init (&spte->lock);
+  cond_init (&spte->cv);
+
+  if (!spt_insert (&thread_current ()->spt, spte))
+    {
+      free (spte);
+      return false;
+    }
+
+  return true;
+}
+
+// Remove the spte.
+static void
+mmap_remove_page (struct spt_entry *spte)
+{
+  struct thread *cur = thread_current ();
+  void *upage = spte->upage;
+  void *kpage = NULL;
+  bool dirty = false;
+
+  struct file *file = spte->file;
+  off_t ofs = spte->ofs;
+  uint32_t read_bytes = spte->read_bytes;
+
+  lock_acquire (&spte->lock);
+
+  // SYNC: If the page is being evicted or loaded, wait until done.
+  while (spte->state == VM_PAGE_EVICTING || spte->state == VM_PAGE_LOADING)
+    cond_wait (&spte->cv, &spte->lock);
+
+  if (spte->state == VM_PAGE_LOADED && spte->kpage != NULL)
+    {
+      kpage = spte->kpage;
+      dirty = pagedir_is_dirty (cur->pagedir, upage);
+      // 核心: pagedir_clear_page().
+      pagedir_clear_page (cur->pagedir, upage);
+      spte->state = VM_PAGE_NOT_LOADED;
+      spte->kpage = NULL;
+    }
+  
+  // ! Lock release time choice: put SLOW file I/O outside lock holding.
+  lock_release (&spte->lock);
+
+  // If mmap page written, write back to file.
+  if (dirty && kpage != NULL)
+    {
+      lock_acquire (&filesys_lock);
+
+      // SYNC: no longer hold spte->lock here, so do not visit spte anymore.
+      file_write_at (file, kpage, read_bytes, ofs);
+      lock_release (&filesys_lock);
+    }
+
+  if (kpage != NULL)
+    // 核心: frame_free().
+    frame_free (kpage);
+
+  spt_delete (&cur->spt, upage);
+  free (spte);
+}
+#endif
+/** LAB3B end */
+
+
 
 
 /* SYS_SEEK:实现重定位文件指针 */
