@@ -14,6 +14,7 @@
 #include "threads/malloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "userprog/exception.h"
 #include "userprog/pagedir.h"
 #include "userprog/process.h"
 #ifdef VM
@@ -155,6 +156,11 @@ check_user_vaddr (const void *uaddr)
 // LAB3A: 把SPT中合法的lazy-page也放行, 而不是直接杀死进程
   if (pagedir_get_page (cur->pagedir, uaddr) != NULL
       || spt_find (&cur->spt, uaddr) != NULL)
+    return;
+
+  // LAB3B: 放行可能的stack access. Syscall may be the first code path to touch a new stack page.
+  if (seems_like_stack_access (uaddr, cur->user_esp)
+      && grow_stack (pg_round_down (uaddr)))
     return;
 #else
   if (pagedir_get_page (cur->pagedir, uaddr) != NULL)

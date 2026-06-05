@@ -30,10 +30,6 @@ static void page_fault (struct intr_frame *);
 static bool vm_load_page (struct spt_entry *spte);
 
 //LAB3B
-#define STACK_MAX_BYTES (8 * 1024 * 1024) /**< Absolute stack limit: 8MB */
-static bool seems_like_stack_access (const void *fault_addr,
-                                     const void *esp);
-static bool grow_stack (void *upage);
 #endif
 
 /** Registers handlers for interrupts that can be caused by user
@@ -360,7 +356,7 @@ vm_load_page (struct spt_entry *spte)
 
    PUSH may fault 4 bytes below ESP, and PUSHA may fault 32 bytes below ESP.
    The absolute limit 8MB keeps buggy programs from growing the stack forever. */
-static bool
+bool
 seems_like_stack_access (const void *fault_addr, const void *esp)
 {
   uintptr_t fault = (uintptr_t) fault_addr;
@@ -379,7 +375,7 @@ seems_like_stack_access (const void *fault_addr, const void *esp)
 
 
 /** LAB3B: Stack Growth: adds one demand-zero stack page and loads it immediately. */
-static bool
+bool
 grow_stack (void *upage)
 {
   struct thread *cur = thread_current ();

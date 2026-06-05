@@ -345,5 +345,22 @@ FAIL tests/vm/page-merge-stk
 ```
 
 
+# 6.5
+**14:00-15:00**
+
+**tests/vm/pt-grow-stk-sc:** 要求stack growth可以发生在syscall内部.
+但是sys_read()中没有放行将要增长的stack page, 直接exit(-1)
+
+```c
+sys_read()
+  -> check_user_buffer(buffer, size)
+      -> check_user_vaddr(each page)
+          -> pagedir_get_page(...) != NULL ? OK
+          -> spt_find(...) != NULL ? OK
+          -> else sys_exit(-1)
+```
+Sol: 在check_user_buffer()里放行stack access && 完成stack growth.
+Pass.
+
 
 
